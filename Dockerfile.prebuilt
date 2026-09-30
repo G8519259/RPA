@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+#
+# Fast image: downloads the PREBUILT binary instead of compiling from source.
+# No Rust toolchain, no 4-minute build.
+#
+# Usage:
+#   docker build -f Dockerfile.prebuilt -t rustproxyadmin:latest .
+#   (run from inside the cloned repo so templates/, static/, config.toml are in context)
+#
+# Override the architecture at build time:
+#   docker build -f Dockerfile.prebuilt --build-arg ARCH=arm64 -t rustproxyadmin:arm64 .
+
+FROM debian:bookworm-slim
+
+# amd64 (default) or arm64 — must match the host you run on.
+ARG ARCH=x86_64
+ARG BIN_BASE=https://raw.githubusercontent.com/G8519259/RPA/binary-release/dist
+
+# ca-certificates for outbound HTTPS (subscription import, Telegram, SMTP, webhooks).
+# curl + gzip to fetch and unpack the binary during build.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gzip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Download and unpack the prebuilt binary for the requested arch.
+RUN curl -fL "${BIN_BASE}/rust_proxy_admin-linux-${ARCH}.gz" -o /tmp/rpa.gz \
+    && gunzip -c /tmp/rpa.gz > /usr/local/bin/rust_proxy_admin \
+    && chmod +x /usr/local/bin/rust_proxy_admin \
+    && rm /tmp/rpa.gz
+
+# Runtime assets read from the working directory (loaded via templates/**/* and ./static).
+# DB migrations are embedded in the binary (sqlx::migrate!), so they're not needed here.
+COPY templates ./templates
+COPY static ./static
+COPY config.toml ./config.toml
+
+# Non-root user + persistent data dir for the SQLite database.
+RUN useradd -r -u 999 -m -d /app rpa 2>/dev/null || true \
+    && mkdir -p /app/data && chown -R rpa:rpa /app
+VOLUME ["/app/data"]
+
+USER rpa
+EXPOSE 8080
+ENV RPA__SERVER__BIND=0.0.0.0:8080 \
+    RPA__DB__URL=sqlite://data/data.db
+
+ENTRYPOINT ["rust_proxy_admin"]
