@@ -1,3 +1,7 @@
+![image.png](https://img.111451444.xyz/files/QWdBRFlpZ0FBa1Q4NkZVOrYC_BX5ctu6ok-_68Jt91W-6MV1ltfuclHyluB7QBnu.png)
+![image.png](https://img.111451444.xyz/files/QWdBRDJCOEFBcUFfNkZVOgMSgD9ooetHuvSZbdqv66lBJ-9MkCdsiiAGNbHJ4IBh.png)
+![image.png](https://img.111451444.xyz/files/QWdBRElDTUFBZzRjNlZVOswtQVSGZYaX8731J65TGFpSeAlWOpUIdWGCjw37aBCy.png)
+
 # RustProxyAdmin v7
 
 多节点代理 / 端口转发 / 隧道管理面板（Rust + actix-web + SQLite），带订阅分发、流量配额、告警中心与 Web 管理后台。
@@ -14,6 +18,9 @@
 - **告警中心**：节点离线、配额预警、到期提醒；通知渠道支持 Telegram Bot / Webhook（HMAC 签名）/ SMTP 邮件，失败自动退避重试
 - **多用户**：admin / viewer 角色，viewer 只读；渠道密钥 AES-256-GCM 加密存储
 - **可观测**：Prometheus `/metrics` 端点
+
+
+
 
 ## 快速开始
 
