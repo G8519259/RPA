@@ -1,0 +1,6 @@
+target/
+.git/
+data/
+dist/
+release_assets/
+*.md

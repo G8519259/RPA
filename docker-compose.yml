@@ -1,0 +1,25 @@
+services:
+  rustproxyadmin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rustproxyadmin:latest
+    container_name: rustproxyadmin
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist the SQLite database.
+      - rpa-data:/app/data
+    environment:
+      RPA__SERVER__BIND: 0.0.0.0:8080
+      RPA__DB__URL: sqlite://data/data.db
+      # IMPORTANT: change these before exposing publicly.
+      RPA__AUTH__INIT_USERNAME: admin
+      RPA__AUTH__INIT_PASSWORD: ChangeMe123!
+      # Set a random 32-byte key to enable AES-256-GCM encryption of channel secrets.
+      # RPA__SERVER__SECRET_KEY: "replace-with-your-own-random-secret"
+      RPA__SERVER__PUBLIC_BASE_URL: http://127.0.0.1:8080
+
+volumes:
+  rpa-data:
