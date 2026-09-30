@@ -198,7 +198,7 @@ async fn update(
     if let Some(a) = b.local_addr.as_deref() { validate_addr(a, "本地地址")?; }
     if let Some(a) = b.remote_addr.as_deref() { validate_addr(a, "远端地址")?; }
     if let Some(m) = b.tunnel_type.as_deref() {
-        if !matches!(m, "tcp" | "ws") {
+        if !matches!(m, "tcp" | "ws" | "wss" | "reverse") {
             return Err(AppError::bad("tunnel_type 只能是 tcp/ws/wss/reverse"));
         }
     }

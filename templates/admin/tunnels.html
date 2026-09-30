@@ -24,7 +24,7 @@
     columns: [
       { label: '名称', cell: r => `<b>${esc(r.name)}</b>${r.remark ? `<div class="muted">${esc(r.remark)}</div>` : ''}` },
       { label: '节点', cell: r => esc(r.node_name || r.node_id) },
-      { label: '模式', cell: r => `<span class="badge">${esc(r.mode)}</span>${r.tls_enabled ? ' <span class="badge ok">TLS</span>' : ''}` },
+      { label: '模式', cell: r => `<span class="badge">${esc(r.tunnel_type)}</span>` },
       { label: '本地监听', cell: r => `<span class="mono">${esc(r.local_addr)}</span>` },
       { label: '远端', cell: r => `<span class="mono">${esc(r.remote_addr)}</span>` },
       { label: '分组', cell: r => groupChip(r.group) },
@@ -40,30 +40,29 @@
       <div class="form-grid">
         <div class="form-row"><label>名称 *</label><input id="fm-name" value="${esc(v('name'))}"></div>
         <div class="form-row"><label>节点 *</label>${nodeSelectHtml('fm-node', item ? item.node_id : 1)}</div>
-        <div class="form-row"><label>模式 *</label><select id="fm-mode">${['tcp','ws'].map(p => `<option ${v('mode') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+        <div class="form-row"><label>模式 *</label><select id="fm-mode">${['tcp','ws','wss','reverse'].map(p => `<option ${v('tunnel_type') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
         <div class="form-row"><label>分组</label>${groupSelectHtml('fm-group', item ? item.group_id : null)}</div>
         <div class="form-row"><label>本地监听地址 *</label><input id="fm-local" value="${esc(v('local_addr'))}" placeholder="0.0.0.0:9000"></div>
         <div class="form-row"><label>远端地址 *</label><input id="fm-remote" value="${esc(v('remote_addr'))}" placeholder="1.2.3.4:9000"></div>
-        <div class="form-row"><label>TLS</label><select id="fm-tls"><option value="0">关闭</option><option value="1" ${item && item.tls_enabled ? 'selected' : ''}>开启</option></select></div>
-        <div class="form-row"><label>心跳（秒）</label><input id="fm-hb" type="number" min="5" max="300" value="${item ? v('heartbeat_sec') : '30'}"></div>
-        <div class="form-row"><label>预共享密钥 PSK</label><input id="fm-psk" value="${esc(v('psk'))}" placeholder="可选"></div>
+        <div class="form-row"><label>Token（可选）</label><input id="fm-token" value="${esc(v('token'))}" placeholder="握手鉴权 token，可选"></div>
+        <div class="form-row"><label>对外地址（可选）</label><input id="fm-exhost" value="${esc(v('export_host'))}" placeholder="订阅导出用，可选"></div>
+        <div class="form-row"><label>对外端口（可选）</label><input id="fm-export" type="number" min="1" max="65535" value="${esc(v('export_port'))}" placeholder="可选"></div>
         <div class="form-row"><label>有效期</label>${expirePresetHtml(isNew ? 'permanent' : null)}</div>
         <div class="form-row"><label>备注</label><input id="fm-remark" value="${esc(v('remark'))}"></div>
       </div>
-      <div class="form-row"><label>证书 PEM（TLS 用，可选）</label><textarea id="fm-cert" rows="3" placeholder="-----BEGIN CERTIFICATE-----">${esc(v('cert_pem'))}</textarea></div>
-      <div class="form-row"><label>私钥 PEM（TLS 用，可选）</label><textarea id="fm-key" rows="3" placeholder="-----BEGIN PRIVATE KEY-----">${esc(v('key_pem'))}</textarea></div>
+      <div class="form-row"><label>额外参数 extra（JSON，可选）</label><textarea id="fm-extra" rows="3" placeholder='{"tls":true}'>${esc(v('extra'))}</textarea></div>
       <div class="form-row"><label>标签</label><div>${tagCheckHtml(item ? item.tags.map(t => t.id) : [])}</div></div>`;
     },
     formData() {
       const val = id => document.getElementById(id).value.trim();
       return {
         name: val('fm-name'), node_id: +document.getElementById('fm-node').value,
-        mode: document.getElementById('fm-mode').value,
+        tunnel_type: document.getElementById('fm-mode').value,
         local_addr: val('fm-local'), remote_addr: val('fm-remote'),
-        tls_enabled: document.getElementById('fm-tls').value === '1',
-        cert_pem: val('fm-cert') || null, key_pem: val('fm-key') || null,
-        psk: val('fm-psk') || null,
-        heartbeat_sec: +document.getElementById('fm-hb').value || 30,
+        token: val('fm-token') || null,
+        export_host: val('fm-exhost') || null,
+        export_port: val('fm-export') ? +val('fm-export') : null,
+        extra: val('fm-extra') || null,
         remark: val('fm-remark') || null,
         group_id: document.getElementById('fm-group').value ? +document.getElementById('fm-group').value : null,
         expire_preset: document.getElementById('fm-preset').value,

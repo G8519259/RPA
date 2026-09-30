@@ -24,7 +24,7 @@
     columns: [
       { label: '名称', cell: r => `<b>${esc(r.name)}</b>${r.remark ? `<div class="muted">${esc(r.remark)}</div>` : ''}` },
       { label: '节点', cell: r => esc(r.node_name || r.node_id) },
-      { label: '协议', cell: r => `<span class="badge">${esc(r.proto)}</span>` },
+      { label: '协议', cell: r => `<span class="badge">${esc(r.protocol)}</span>` },
       { label: '监听', cell: r => `<span class="mono">${esc(r.listen_ip)}:${r.listen_port}</span>` },
       { label: '目标', cell: r => `<span class="mono">${esc(r.target_ip)}:${r.target_port}</span>` },
       { label: '分组', cell: r => groupChip(r.group) },
@@ -40,7 +40,7 @@
       <div class="form-grid">
         <div class="form-row"><label>名称 *</label><input id="fm-name" value="${esc(v('name'))}"></div>
         <div class="form-row"><label>节点 *</label>${nodeSelectHtml('fm-node', item ? item.node_id : 1)}</div>
-        <div class="form-row"><label>协议 *</label><select id="fm-proto">${['tcp','udp','tcp+udp'].map(p => `<option ${v('proto') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+        <div class="form-row"><label>协议 *</label><select id="fm-proto">${[['tcp','tcp'],['udp','udp'],['both','tcp+udp']].map(([val,label]) => `<option value="${val}" ${v('protocol') === val ? 'selected' : ''}>${label}</option>`).join('')}</select></div>
         <div class="form-row"><label>分组</label>${groupSelectHtml('fm-group', item ? item.group_id : null)}</div>
         <div class="form-row"><label>监听 IP</label><input id="fm-lip" value="${esc(item ? v('listen_ip') : '0.0.0.0')}"></div>
         <div class="form-row"><label>监听端口 *</label><input id="fm-lport" type="number" min="1" max="65535" value="${esc(v('listen_port')) || '8080'}"></div>
@@ -55,7 +55,7 @@
       const val = id => document.getElementById(id).value.trim();
       return {
         name: val('fm-name'), node_id: +document.getElementById('fm-node').value,
-        proto: document.getElementById('fm-proto').value,
+        protocol: document.getElementById('fm-proto').value,
         listen_ip: val('fm-lip') || '0.0.0.0',
         listen_port: +document.getElementById('fm-lport').value,
         target_ip: val('fm-tip'),
