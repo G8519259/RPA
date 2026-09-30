@@ -40,8 +40,18 @@ async function api(method, url, body) {
       if (isIdempotent && attempt < maxTries) { await sleep(120 * attempt); continue; }
       throw lastErr;
     }
-    if (!j.ok) throw new Error(j.error || ('HTTP ' + r.status));
-    return j.data;
+    // 兼容两种后端响应格式：
+    //   1) 统一封装 { ok, data, error }（多数接口，通过 ApiResp::ok）
+    //   2) 裸对象（部分接口直接返回，如订阅 list/detail：{items,total,...}）
+    if (Object.prototype.hasOwnProperty.call(j, 'ok')) {
+      if (!j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      return j.data;
+    }
+    // 无 ok 字段 → HTTP 状态非 2xx 视为错误，否则原样返回裸对象
+    if (r.status < 200 || r.status >= 300) {
+      throw new Error(j.error || ('HTTP ' + r.status));
+    }
+    return j;
   }
   throw lastErr || new Error('请求失败');
 }
