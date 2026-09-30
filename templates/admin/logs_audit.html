@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}操作日志 - RustProxyAdmin{% endblock %}
+{% block page_title %}操作日志{% endblock %}
+{% block page_desc %}操作审计日志（谁在何时做了什么）{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <input id="f-user" placeholder="操作人" style="width:130px">
+  <input id="f-action" placeholder="动作" style="width:150px">
+  <input id="f-rtype" placeholder="资源类型" style="width:130px">
+  <input id="f-from" type="date" style="width:150px">
+  <input id="f-to" type="date" style="width:150px">
+  <button class="btn" onclick="page=1;load()">筛选</button>
+  <button class="btn" onclick="doCleanup()">手动清理</button>
+</div>
+<table class="tbl"><thead><tr>
+  <th>ID</th><th>操作人</th><th>动作</th><th>资源</th><th>IP</th><th>详情</th><th>时间</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<div id="pager"></div>
+<script>
+let page = 1;
+const perPage = 20;
+function qs() {
+  const p = new URLSearchParams({ page, page_size: perPage });
+  for (const [k, id] of [['user','f-user'],['action','f-action'],['resource_type','f-rtype']]) {
+    const v = document.getElementById(id).value.trim();
+    if (v) p.set(k, v);
+  }
+  const f = document.getElementById('f-from').value, t = document.getElementById('f-to').value;
+  if (f) p.set('from', f + ' 00:00:00');
+  if (t) p.set('to', t + ' 23:59:59');
+  return p.toString();
+}
+async function load() {
+  const d = await api('GET', '/api/logs/audit?' + qs());
+  document.getElementById('tbody').innerHTML = d.items.map(r => `<tr>
+    <td>${r.id}</td><td>${esc(r.actor_name || '-')}</td>
+    <td class="mono small">${esc(r.action)}</td>
+    <td class="small">${r.resource_type ? esc(r.resource_type) + (r.resource_id ? '#' + r.resource_id : '') : '-'}</td>
+    <td class="mono small">${esc(r.ip_addr || '-')}</td>
+    <td class="small"><button class="btn btn-sm" onclick='showDetail(${JSON.stringify(r.detail || {})})'>查看</button></td>
+    <td class="small">${fmtTime(r.created_at)}</td></tr>`).join('');
+  renderPager('pager', d.total, page, perPage, p => { page = p; load(); });
+}
+function showDetail(det) {
+  openModal('详情', `<pre class="mono small">${esc(JSON.stringify(det, null, 2))}</pre>`, null, null);
+}
+async function doCleanup() {
+  openModal('手动清理日志', `
+    <label>删除 N 天前的日志<input id="c-days" type="number" value="30" min="1" max="3650"></label>
+    <div class="muted">清理 access_logs / subscription_logs / audit_logs</div>`,
+    async () => {
+      const days = +document.getElementById('c-days').value;
+      const d = await api('POST', '/api/logs/cleanup', { days });
+      toast(`已清理：访问 ${d.deleted.access_logs} / 订阅 ${d.deleted.subscription_logs} / 审计 ${d.deleted.audit_logs}`);
+      load();
+    }, '开始清理');
+}
+load();
+</script>
+{% endblock %}

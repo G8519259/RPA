@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}输出模板 - RustProxyAdmin{% endblock %}
+{% block page_title %}输出模板{% endblock %}
+{% block page_desc %}Clash / Sing-box 输出模板{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <button class="btn btn-primary" onclick="openForm()">新建模板</button>
+  <span class="muted">标记说明：
+    <span class="mono">@ALL</span> 全部节点 ·
+    <span class="mono">@TAG:名</span> ·
+    <span class="mono">@GROUP:名</span> ·
+    <span class="mono">@TYPE:proxy</span> ·
+    <span class="mono">@REGEX:re</span>
+  </span>
+</div>
+<table class="tbl"><thead><tr>
+  <th>名称</th><th>格式</th><th>类型</th><th class="num">被订阅引用</th><th>更新时间</th><th>操作</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<script>
+async function load() {
+  const d = await api('GET', '/api/templates');
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = d.map(t => `<tr>
+    <td>${esc(t.name)}<div class="muted small">${esc(t.description || '')}</div></td>
+    <td>${t.format}</td>
+    <td>${t.is_builtin ? '<span class="badge badge-info">内置</span>' : '自定义'}</td>
+    <td class="num">${t.used_by}</td>
+    <td class="small">${fmtTime(t.updated_at)}</td>
+    <td class="nowrap">
+      <button class="btn btn-sm" onclick="previewTpl(${t.id})">预览</button>
+      <button class="btn btn-sm" onclick="duplicateTpl(${t.id})">复制</button>
+      ${t.is_builtin ? '' : `<button class="btn btn-sm" onclick="openForm(${t.id})">编辑</button>
+      <button class="btn btn-sm btn-danger" onclick="delTpl(${t.id})">删除</button>`}
+    </td></tr>`).join('');
+}
+async function openForm(id) {
+  let t = { name: '', description: '', format: 'clash', content: '' };
+  if (id) t = await api('GET', `/api/templates/${id}`);
+  openModal(id ? '编辑模板' : '新建模板', `
+    <label>名称<input id="m-name" value="${esc(t.name)}"></label>
+    <label>描述<input id="m-desc" value="${esc(t.description || '')}"></label>
+    <label>格式<select id="m-format">
+      <option value="clash"${t.format === 'clash' ? ' selected' : ''}>clash</option>
+      <option value="singbox"${t.format === 'singbox' ? ' selected' : ''}>singbox</option>
+    </select></label>
+    <label>内容<textarea id="m-content" rows="22" class="mono" style="width:100%">${esc(t.content)}</textarea></label>
+    <div id="m-errs" class="small" style="color:#c00;white-space:pre-wrap"></div>
+    <div class="row">
+      <button class="btn" onclick="validateContent()">校验</button>
+      <button class="btn" onclick="previewContent()">用示例节点预览</button>
+    </div>
+    <pre id="m-preview" class="mono small" style="max-height:300px;overflow:auto;display:none"></pre>
+  `, async () => {
+    const body = {
+      name: document.getElementById('m-name').value,
+      description: document.getElementById('m-desc').value,
+      format: document.getElementById('m-format').value,
+      content: document.getElementById('m-content').value,
+    };
+    await api(id ? 'PUT' : 'POST', id ? `/api/templates/${id}` : '/api/templates', body);
+    toast('已保存');
+    load();
+  }, '保存');
+}
+async function validateContent() {
+  const format = document.getElementById('m-format').value;
+  const content = document.getElementById('m-content').value;
+  const d = await api('POST', '/api/templates/validate', { format, content });
+  const el = document.getElementById('m-errs');
+  if (d.valid) { el.style.color = '#080'; el.textContent = '校验通过 ✓'; }
+  else { el.style.color = '#c00'; el.textContent = d.errors.join('\n'); }
+}
+async function previewContent() {
+  const format = document.getElementById('m-format').value;
+  const content = document.getElementById('m-content').value;
+  try {
+    const d = await api('POST', '/api/templates/preview_raw', { format, content });
+    const el = document.getElementById('m-preview');
+    el.style.display = 'block';
+    el.textContent = d.content;
+  } catch (e) { toast(e.message || '预览失败', true); }
+}
+async function previewTpl(id) {
+  const d = await api('POST', `/api/templates/${id}/preview`);
+  openModal('渲染预览（示例节点）', `<pre class="mono small" style="max-height:60vh;overflow:auto">${esc(d.content)}</pre>`, null, null);
+}
+async function duplicateTpl(id) {
+  await api('POST', `/api/templates/${id}/duplicate`);
+  toast('已复制');
+  load();
+}
+async function delTpl(id) {
+  await confirmDo('确定删除该模板吗？', async () => {
+    await api('DELETE', `/api/templates/${id}`);
+    toast('已删除');
+    load();
+  }, '删除');
+}
+load();
+</script>
+{% endblock %}

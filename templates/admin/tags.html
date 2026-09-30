@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}标签管理 - RustProxyAdmin{% endblock %}
+{% block page_title %}标签管理{% endblock %}
+{% block page_desc %}标签管理{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <button class="btn btn-primary" onclick="openForm()">新建标签</button>
+  <button class="btn" onclick="openMerge()">合并标签</button>
+</div>
+<table class="tbl"><thead><tr>
+  <th>名称</th><th>颜色</th><th class="num">使用次数</th><th>操作</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<script>
+let tags = [];
+async function load() {
+  tags = await api('GET', '/api/tags');
+  document.getElementById('tbody').innerHTML = tags.map(t => `
+    <tr>
+      <td><span class="tagchip" style="background:${esc(t.color)}">${esc(t.name)}</span></td>
+      <td class="mono">${esc(t.color)}</td>
+      <td class="num">${t.usage_count}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="openForm(${t.id})">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="del(${t.id}, '${esc(t.name).replace(/'/g, "\\'")}')">删除</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="muted" style="text-align:center">暂无标签</td></tr>';
+}
+function openForm(id) {
+  const t = id ? tags.find(x => x.id === id) : null;
+  openModal(id ? '编辑标签' : '新建标签', `
+    <div class="form-row"><label>名称 *</label><input id="t-name" value="${esc(t?.name || '')}"></div>
+    <div class="form-row"><label>颜色</label><input id="t-color" type="color" value="${esc(t?.color || '#3b82f6')}" style="width:80px"></div>`,
+    async () => {
+      const body = { name: document.getElementById('t-name').value.trim(), color: document.getElementById('t-color').value };
+      if (id) await api('PUT', `/api/tags/${id}`, body);
+      else await api('POST', '/api/tags', body);
+      toast('已保存'); load();
+    }, '保存');
+}
+function openMerge() {
+  if (tags.length < 2) return toast('至少需要 2 个标签才能合并', true);
+  openModal('合并标签', `
+    <div class="form-row"><label>目标标签（保留）</label>
+      <select id="mg-target">${tags.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+    <div class="form-row"><label>源标签（合并后删除，可多选）</label>
+      ${tags.map(t => `<label style="display:block;margin:4px 0"><input type="checkbox" class="mg-src" value="${t.id}"> ${esc(t.name)}</label>`).join('')}</div>`,
+    async () => {
+      const target = +document.getElementById('mg-target').value;
+      const src = [...document.querySelectorAll('.mg-src:checked')].map(c => +c.value).filter(id => id !== target);
+      if (!src.length) return toast('请选择源标签', true);
+      const d = await api('POST', '/api/tags/merge', { source_ids: src, target_id: target });
+      toast(`已合并，迁移 ${d.moved} 条关联`); load();
+    }, '合并');
+}
+async function del(id, name) {
+  confirmDo(`删除标签「${name}」？条目上的该标签将被移除。`, async () => {
+    await api('DELETE', `/api/tags/${id}`);
+    toast('已删除'); load();
+  }, '删除');
+}
+load().catch(e => toast(e.message, true));
+</script>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}统计 - RustProxyAdmin{% endblock %}
+{% block page_title %}统计{% endblock %}
+{% block page_desc %}流量、连接与节点统计{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <select id="f-gran">
+    <option value="hourly">按小时</option>
+    <option value="daily">按天</option>
+  </select>
+  <input id="f-from" type="date">
+  <input id="f-to" type="date">
+  <select id="f-node"><option value="">全部节点</option></select>
+  <select id="f-type">
+    <option value="">全部类型</option>
+    <option value="proxy">落地代理</option>
+    <option value="forward">端口转发</option>
+    <option value="tunnel">中转隧道</option>
+  </select>
+  <button class="btn" onclick="loadStats()">筛选</button>
+</div>
+<div class="card">
+  <h3 id="chart-title">流量趋势</h3>
+  <div id="chart"></div>
+  <div class="legend">
+    <span><i class="dot" style="background:#4da3ff"></i>下行</span>
+    <span><i class="dot" style="background:#ff9f43"></i>上行</span>
+    <span><i class="dot" style="background:#2ed573"></i>连接数</span>
+  </div>
+</div>
+<div class="grid2">
+  <div class="card">
+    <h3>类型占比（近 7 天流量）</h3>
+    <div id="pie"></div>
+  </div>
+  <div class="card">
+    <h3>Top 条目（近 7 天）</h3>
+    <table class="tbl"><thead><tr><th>条目</th><th>类型</th><th>连接数</th><th>流量</th></tr></thead>
+    <tbody id="top-rules"></tbody></table>
+  </div>
+</div>
+<script>
+function svgLine(series, labels) {
+  // series: [{name, color, values:[n]}]
+  const W = 900, H = 260, P = 36;
+  const n = Math.max(...series.map(s => s.values.length), 1);
+  const maxV = Math.max(1, ...series.flatMap(s => s.values));
+  const X = i => n === 1 ? P : P + i * (W - 2 * P) / (n - 1);
+  const Y = v => H - P - (v / maxV) * (H - 2 * P);
+  let paths = series.map(s => {
+    const d = s.values.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2"/>`;
+  }).join('');
+  // x 轴标签（最多 8 个）
+  const step = Math.max(1, Math.ceil(n / 8));
+  let xs = '';
+  for (let i = 0; i < n; i += step) {
+    xs += `<text x="${X(i)}" y="${H - 12}" font-size="10" fill="#888" text-anchor="middle">${esc(labels[i] || '')}</text>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
+    <line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#ddd"/>
+    <text x="4" y="${P}" font-size="10" fill="#888">${fmtBytes(maxV)}</text>
+    ${paths}${xs}</svg>`;
+}
+async function loadStats() {
+  const gran = document.getElementById('f-gran').value;
+  const p = {
+    from: document.getElementById('f-from').value || undefined,
+    to: document.getElementById('f-to').value || undefined,
+    node_id: document.getElementById('f-node').value || undefined,
+    rule_type: document.getElementById('f-type').value || undefined,
+  };
+  const d = await api('GET', '/api/stats/' + gran + '?' + qs(p));
+  const items = d.items;
+  document.getElementById('chart-title').textContent =
+    `流量趋势（${gran === 'hourly' ? '按小时' : '按天'}，共 ${items.length} 个点）`;
+  document.getElementById('chart').innerHTML = items.length
+    ? svgLine([
+        { name: '下行', color: '#4da3ff', values: items.map(i => i.bytes_down) },
+        { name: '上行', color: '#ff9f43', values: items.map(i => i.bytes_up) },
+        { name: '连接数', color: '#2ed573', values: items.map(i => i.connections) },
+      ], items.map(i => i.time.slice(5)))
+    : '<p class="muted">暂无数据</p>';
+}
+async function loadOverview() {
+  const ov = await api('GET', '/api/stats/overview');
+  // 类型占比
+  const byType = {};
+  for (const r of ov.top_rules) {
+    byType[r.rule_type] = (byType[r.rule_type] || 0) + r.bytes_up + r.bytes_down;
+  }
+  const total = Object.values(byType).reduce((a, b) => a + b, 0) || 1;
+  const names = { proxy: '落地代理', forward: '端口转发', tunnel: '中转隧道' };
+  const colors = { proxy: '#4da3ff', forward: '#ff9f43', tunnel: '#2ed573' };
+  document.getElementById('pie').innerHTML = Object.entries(byType).map(([t, v]) => `
+    <div class="bar-row"><span>${names[t] || t}</span>
+      <div class="bar"><div style="width:${(v / total * 100).toFixed(1)}%;background:${colors[t] || '#888'}"></div></div>
+      <span class="mono">${fmtBytes(v)} (${(v / total * 100).toFixed(1)}%)</span></div>`).join('')
+    || '<p class="muted">暂无数据</p>';
+  document.getElementById('top-rules').innerHTML = ov.top_rules.slice(0, 10).map(r => `
+    <tr><td>${esc(r.name || ('#' + r.rule_id))}</td><td>${names[r.rule_type] || r.rule_type}</td>
+    <td class="mono">${r.connections}</td><td class="mono">${fmtBytes(r.bytes_up + r.bytes_down)}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted" style="text-align:center">暂无数据</td></tr>';
+}
+(async () => {
+  // 默认时间范围：近 7 天
+  const t = new Date(), f = new Date(Date.now() - 6 * 864e5);
+  document.getElementById('f-to').value = t.toISOString().slice(0, 10);
+  document.getElementById('f-from').value = f.toISOString().slice(0, 10);
+  try {
+    const nd = await api('GET', '/api/nodes?' + qs({ page: 1, page_size: 100 }));
+    document.getElementById('f-node').innerHTML = '<option value="">全部节点</option>' +
+      nd.items.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
+  } catch (e) {}
+  try { await Promise.all([loadStats(), loadOverview()]); }
+  catch (e) { toast(e.message, true); }
+})();
+</script>
+{% endblock %}

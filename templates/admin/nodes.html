@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}节点管理 - RustProxyAdmin{% endblock %}
+{% block page_title %}节点管理{% endblock %}
+{% block page_desc %}服务器节点管理与 Worker 配对{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <button class="btn" onclick="showAdd()">＋ 添加节点</button>
+  <span class="muted" style="font-size:12px">本机节点不可删除；Worker token 仅在创建/重置时显示一次</span>
+</div>
+<div class="card"><table class="tbl" id="tbl">
+  <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>公网地址</th><th>状态</th><th>最近心跳</th><th>版本</th><th>负载 CPU/内存</th><th>操作</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table></div>
+
+<div id="modal" class="modal" style="display:none"><div class="modal-box">
+  <h3 id="mTitle">添加节点</h3>
+  <div id="mBody"></div>
+  <div style="margin-top:12px;text-align:right">
+    <button class="btn ghost" onclick="hideModal()">关闭</button>
+    <button class="btn" id="mOk" onclick="saveNode()">保存</button>
+  </div>
+</div></div>
+
+<div id="cmdModal" class="modal" style="display:none"><div class="modal-box">
+  <h3>Worker 启动命令</h3>
+  <p class="muted" style="font-size:12px" id="cmdNote"></p>
+  <pre id="cmdPre" style="white-space:pre-wrap;word-break:break-all;background:#0d1117;padding:12px;border-radius:6px"></pre>
+  <div style="margin-top:12px;text-align:right">
+    <button class="btn" onclick="copyCmd()">复制</button>
+    <button class="btn ghost" onclick="document.getElementById('cmdModal').style.display='none'">我已保存</button>
+  </div>
+</div></div>
+
+<script>
+let editing = null;
+async function load() {
+  const [m, n2] = await Promise.all([api('GET', '/api/monitor/nodes'), api('GET', '/api/nodes')]);
+  const extra = {};
+  for (const n of n2.items) extra[n.id] = n;
+  const tb = document.getElementById('rows');
+  tb.innerHTML = '';
+  for (const n of m.items) {
+    const host = (extra[n.id] || {}).public_host || '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${n.id}</td>
+      <td>${esc(n.name)}</td>
+      <td>${n.is_local ? '<span class="badge">本机</span>' : 'Worker'}</td>
+      <td class="muted">${esc(host || '—')}</td>
+      <td>${n.online ? '<span class="badge ok">在线</span>' : '<span class="badge danger">离线</span>'}</td>
+      <td class="muted" style="font-size:12px">${esc(n.last_heartbeat_at || (n.is_local ? '本机' : '无'))}</td>
+      <td class="muted">${esc(n.version || '—')}</td>
+      <td class="muted" style="font-size:12px">${n.cpu != null ? n.cpu.toFixed(1) + '% / ' + n.mem.toFixed(1) + '%' : '—'}</td>
+      <td class="ops"></td>`;
+    const ops = tr.querySelector('.ops');
+    if (!n.is_local) {
+      const b1 = document.createElement('button'); b1.className = 'btn sm'; b1.textContent = '编辑';
+      b1.onclick = () => showEdit(n.id); ops.appendChild(b1);
+      const b2 = document.createElement('button'); b2.className = 'btn sm warn'; b2.textContent = '重置 Token';
+      b2.onclick = () => resetToken(n.id); ops.appendChild(b2);
+      const b3 = document.createElement('button'); b3.className = 'btn sm danger'; b3.textContent = '删除';
+      b3.onclick = () => delNode(n.id); ops.appendChild(b3);
+    }
+    tb.appendChild(tr);
+  }
+}
+function hideModal() { document.getElementById('modal').style.display = 'none'; }
+function showAdd() {
+  editing = null;
+  document.getElementById('mTitle').textContent = '添加节点';
+  document.getElementById('mBody').innerHTML = `
+    <label>节点名称<input id="fName" class="inp" maxlength="64" placeholder="如 worker-tokyo"></label>
+    <label>公网地址（可选）<input id="fHost" class="inp" placeholder="如 203.0.113.10"></label>
+    <label>Master 公网地址<input id="fMaster" class="inp" placeholder="如 https://admin.example.com"></label>
+    <label>备注（可选）<input id="fMeta" class="inp"></label>`;
+  document.getElementById('modal').style.display = 'block';
+}
+async function showEdit(id) {
+  const d = await api('GET', '/api/nodes');
+  const n = d.items.find(x => x.id === id);
+  if (!n) return;
+  editing = id;
+  document.getElementById('mTitle').textContent = '编辑节点 #' + id;
+  document.getElementById('mBody').innerHTML = `
+    <label>节点名称<input id="fName" class="inp" maxlength="64" value="${esc(n.name)}"></label>
+    <label>公网地址<input id="fHost" class="inp" value="${esc(n.public_host || '')}"></label>
+    <label>备注<input id="fMeta" class="inp" value="${esc(n.meta || '')}"></label>
+    <label>启用<select id="fEnabled" class="inp"><option value="1"${n.enabled ? ' selected' : ''}>启用</option><option value="0"${n.enabled ? '' : ' selected'}>停用</option></select></label>`;
+  document.getElementById('modal').style.display = 'block';
+}
+async function saveNode() {
+  const name = document.getElementById('fName').value.trim();
+  if (!name) { alert('名称不能为空'); return; }
+  if (editing == null) {
+    const d = await api('POST', '/api/nodes', {
+      name, public_host: document.getElementById('fHost').value.trim() || null,
+      meta: document.getElementById('fMeta').value.trim() || null,
+      master_url: document.getElementById('fMaster').value.trim() || null,
+    });
+    hideModal();
+    showCmd(d.worker_cmd, d.note);
+  } else {
+    await api('PUT', '/api/nodes/' + editing, {
+      name, public_host: document.getElementById('fHost').value.trim(),
+      meta: document.getElementById('fMeta').value.trim(),
+      enabled: parseInt(document.getElementById('fEnabled').value),
+    });
+    hideModal();
+  }
+  load();
+}
+async function resetToken(id) {
+  if (!confirm('重置后旧 token 立即失效，Worker 需用新命令重启。继续？')) return;
+  const master = prompt('Master 公网地址（用于生成启动命令）', '');
+  const d = await api('POST', '/api/nodes/' + id + '/reset_token', { master_url: master || null });
+  showCmd(d.worker_cmd, d.note);
+  load();
+}
+async function delNode(id) {
+  if (!confirm('删除节点 #' + id + '？该节点下的条目配置不会被删除。')) return;
+  await api('DELETE', '/api/nodes/' + id);
+  load();
+}
+function showCmd(cmd, note) {
+  document.getElementById('cmdPre').textContent = cmd;
+  document.getElementById('cmdNote').textContent = note || '';
+  document.getElementById('cmdModal').style.display = 'block';
+}
+function copyCmd() {
+  navigator.clipboard.writeText(document.getElementById('cmdPre').textContent);
+  alert('已复制');
+}
+load();
+</script>
+{% endblock %}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - RustProxyAdmin</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="login-body">
+<div class="login-wrap">
+  <div class="login-brand">
+    <span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></span>
+    <b>RustProxyAdmin</b>
+  </div>
+  <div class="login-card">
+    <h1>欢迎回来</h1>
+    <p class="muted">登录以管理代理 / 转发 / 隧道</p>
+    <div id="err" class="error" style="display:none"></div>
+    <label>用户名<input id="username" autocomplete="username" placeholder="请输入用户名"></label>
+    <label>密码<input id="password" type="password" autocomplete="current-password" placeholder="请输入密码"></label>
+    <button class="btn btn-primary btn-block" onclick="doLogin()">登 录</button>
+  </div>
+  <div class="login-foot">RustProxyAdmin v7 · 安全登录</div>
+</div>
+<script>
+async function doLogin() {
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      }),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '登录失败');
+    // csrf 存入 sessionStorage 供后续 API 调用
+    sessionStorage.setItem('csrf', j.data.csrf_token);
+    location.href = '/admin';
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('username').focus();
+</script>
+</body>
+</html>

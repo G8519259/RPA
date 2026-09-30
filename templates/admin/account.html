@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}账户设置 - RustProxyAdmin{% endblock %}
+{% block page_title %}账户设置{% endblock %}
+{% block page_desc %}账户设置、多用户管理与密码修改{% endblock %}
+{% block content %}
+<div class="grid2">
+  <div class="card">
+    <h3>修改密码</h3>
+    <div class="form-row"><label>旧密码</label><input id="old_pw" type="password"></div>
+    <div class="form-row"><label>新密码（至少 8 位）</label><input id="new_pw" type="password"></div>
+    <div class="form-row"><label>确认新密码</label><input id="new_pw2" type="password"></div>
+    <button class="btn btn-primary" onclick="changePw()">修改密码</button>
+    <p class="muted">修改后其他设备的会话将立即失效。</p>
+  </div>
+  <div class="card">
+    <h3>修改用户名</h3>
+    <div class="form-row"><label>当前密码</label><input id="cur_pw" type="password"></div>
+    <div class="form-row"><label>新用户名</label><input id="new_name"></div>
+    <button class="btn btn-primary" onclick="changeName()">修改用户名</button>
+  </div>
+</div>
+<div class="card">
+  <h3>会话管理</h3>
+  <button class="btn btn-danger" onclick="confirmDo('将退出该账户在所有设备上的登录，确定吗？', logoutAll)">退出所有设备</button>
+  <h3 style="margin-top:20px">最近登录记录</h3>
+  <table class="tbl"><thead><tr><th>时间</th><th>IP</th><th>设备</th></tr></thead><tbody id="sessions"></tbody></table>
+</div>
+{% if role == 'admin' %}
+<div class="card">
+  <h3>用户管理 <span class="muted" style="font-weight:normal">（viewer 为只读角色，所有写接口返回 403）</span></h3>
+  <div class="toolbar">
+    <input id="u-name" placeholder="用户名" style="width:140px">
+    <input id="u-pass" type="password" placeholder="密码（至少 8 位）" style="width:160px">
+    <select id="u-role"><option value="viewer">viewer（只读）</option><option value="admin">admin</option></select>
+    <button class="btn btn-primary" onclick="createUser()">新建用户</button>
+    <button class="btn" onclick="loadUsers()">刷新</button>
+  </div>
+  <table class="tbl"><thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="u-rows"></tbody></table>
+</div>
+{% endif %}
+<script>
+async function changePw() {
+  const a = document.getElementById('new_pw').value, b = document.getElementById('new_pw2').value;
+  if (a !== b) return toast('两次输入的新密码不一致', true);
+  await api('POST', '/api/auth/change_password', { old_password: document.getElementById('old_pw').value, new_password: a });
+  toast('密码已修改，其他设备已退出');
+  document.getElementById('old_pw').value = document.getElementById('new_pw').value = document.getElementById('new_pw2').value = '';
+  loadSessions();
+}
+async function changeName() {
+  await api('POST', '/api/auth/change_username', { password: document.getElementById('cur_pw').value, new_username: document.getElementById('new_name').value });
+  toast('用户名已修改');
+  location.reload();
+}
+async function logoutAll() {
+  await api('POST', '/api/auth/logout_all');
+  sessionStorage.removeItem('csrf');
+  location.href = '/admin/login';
+}
+async function loadSessions() {
+  // 最近登录记录取自审计日志
+  const d = await api('GET', '/api/logs/audit?' + qs({action: 'login', page: 1, page_size: 10}));
+  document.getElementById('sessions').innerHTML = d.items.map(x => {
+    let det = {}; try { det = JSON.parse(x.detail || '{}'); } catch(e) {}
+    return `<tr><td>${fmtTime(x.created_at)}</td><td>${esc(x.ip_addr || '-')}</td><td class="mono">${esc(det.ua || x.actor_name || '-')}</td></tr>`;
+  }).join('') || '<tr><td colspan="3" class="muted">暂无记录</td></tr>';
+}
+loadSessions().catch(e => toast(e.message, true));
+async function loadUsers() {
+  try {
+    const d = await api('GET', '/api/users');
+    const items = d.data || d.items || d;
+    document.getElementById('u-rows').innerHTML = items.map(u => `<tr>
+      <td>${u.id}</td><td><b>${esc(u.username)}</b></td>
+      <td><span class="badge ${u.role === 'admin' ? 'ok' : ''}">${esc(u.role)}</span></td>
+      <td class="muted">${fmtTime(u.created_at)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="toggleRole(${u.id}, '${u.role === 'admin' ? 'viewer' : 'admin'}')">${u.role === 'admin' ? '降为 viewer' : '升为 admin'}</button>
+        <button class="btn btn-sm" onclick="resetUserPw(${u.id})">重置密码</button>
+        <button class="btn btn-sm btn-danger" onclick="delUser(${u.id})">删除</button>
+      </td></tr>`).join('') || '<tr><td colspan="5" class="muted">暂无用户</td></tr>';
+  } catch (e) { /* 非 admin 不渲染该卡片 */ }
+}
+async function createUser() {
+  const username = document.getElementById('u-name').value.trim();
+  const password = document.getElementById('u-pass').value;
+  const role = document.getElementById('u-role').value;
+  await api('POST', '/api/users', { username, password, role });
+  toast('用户已创建');
+  document.getElementById('u-name').value = '';
+  document.getElementById('u-pass').value = '';
+  loadUsers();
+}
+async function toggleRole(id, role) {
+  await confirmDo(`确定将该用户角色改为 ${role} 吗？`, async () => {
+    await api('PUT', `/api/users/${id}`, { role });
+    toast('角色已更新');
+    loadUsers();
+  });
+}
+async function resetUserPw(id) {
+  const pw = prompt('请输入新密码（至少 8 位）：');
+  if (!pw) return;
+  await api('PUT', `/api/users/${id}`, { password: pw });
+  toast('密码已重置，该用户其他会话已失效');
+}
+async function delUser(id) {
+  await confirmDo('确定删除该用户吗？其会话将立即失效。', async () => {
+    await api('DELETE', `/api/users/${id}`);
+    toast('用户已删除');
+    loadUsers();
+  });
+}
+if (document.getElementById('u-rows')) loadUsers().catch(e => toast(e.message, true));
+</script>
+{% endblock %}

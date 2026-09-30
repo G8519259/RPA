@@ -1,0 +1,61 @@
+[server]
+bind = "0.0.0.0:8080"
+trusted_proxies = ["127.0.0.1"]
+session_hours = 24
+cookie_secure = false
+public_base_url = "http://127.0.0.1:8080"
+
+[db]
+url = "sqlite://data/data.db"
+
+[auth]
+init_username = "admin"
+init_password = "ChangeMe123!"
+login_max_fail = 5
+login_lock_minutes = 15
+
+[time]
+timezone_offset_hours = 8
+
+[log]
+level = "info"
+access_log_enabled = true
+access_log_sample_rate = 1.0
+access_log_retention_days = 14
+audit_log_retention_days = 180
+subscription_log_retention_days = 30
+
+[stats]
+aggregate_interval_secs = 60
+hourly_retention_days = 60
+daily_retention_days = 730
+
+[nodes]
+heartbeat_interval_secs = 10
+heartbeat_timeout_secs = 30
+config_pull_interval_secs = 15
+report_interval_secs = 10
+
+[subscription]
+rate_limit_per_min = 30
+default_expire_preset = "30d"
+
+[import]
+fetch_timeout_secs = 15
+max_body_mb = 5
+user_agent = "RustProxyAdmin/1.0"
+parse_cache_minutes = 10
+
+[templates]
+max_size_kb = 256
+regex_max_len = 200
+
+[lifecycle]
+tick_secs = 60
+expired_sub_cleanup_days = 0
+
+[alerts]
+dispatch_interval_secs = 10
+max_attempts = 5
+node_check_interval_secs = 15
+event_retention_days = 60

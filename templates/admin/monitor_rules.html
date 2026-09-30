@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}条目监控 - RustProxyAdmin{% endblock %}
+{% block page_title %}条目监控{% endblock %}
+{% block page_desc %}条目运行状态监控{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <select id="f-type">
+    <option value="">全部类型</option>
+    <option value="proxy">落地代理</option>
+    <option value="forward">端口转发</option>
+    <option value="tunnel">中转隧道</option>
+  </select>
+  <button class="btn" onclick="loadRules()">刷新</button>
+  <span class="muted" style="font-size:12px">每 15 秒自动刷新 · 速率 = 近 1 分钟均值</span>
+</div>
+<table class="tbl">
+  <thead><tr><th>条目</th><th>类型</th><th>启用</th><th>运行状态</th><th>实时连接</th>
+  <th>近1分钟连接</th><th>近1分钟上行</th><th>近1分钟下行</th></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+<script>
+const typeNames = { proxy: '落地代理', forward: '端口转发', tunnel: '中转隧道' };
+async function loadRules() {
+  const t = document.getElementById('f-type').value;
+  const d = await api('GET', '/api/monitor/rules');
+  const rows = d.items.filter(r => !t || r.entry_type === t);
+  document.getElementById('tbody').innerHTML = rows.map(r => {
+    const st = r.runtime_status;
+    const badge = st === 'running' ? '<span class="badge ok">运行中</span>'
+      : st === 'stopped' ? '<span class="badge">已停止</span>'
+      : st.startsWith('idle') ? '<span class="badge">待机</span>'
+      : st.startsWith('error') ? `<span class="badge danger" title="${esc(st)}">异常</span>`
+      : `<span class="badge">${esc(st)}</span>`;
+    return `<tr>
+      <td><b>${esc(r.name)}</b> <span class="muted">#${r.entry_id}</span></td>
+      <td>${typeNames[r.entry_type] || r.entry_type}</td>
+      <td>${r.enabled ? '<span class="badge ok">启用</span>' : '<span class="badge danger">停用</span>'}</td>
+      <td>${badge}</td>
+      <td class="mono">${r.conns}</td>
+      <td class="mono">${r.last_minute.connections}</td>
+      <td class="mono">${fmtBps(r.last_minute.up_bps)}</td>
+      <td class="mono">${fmtBps(r.last_minute.down_bps)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted" style="text-align:center">暂无数据</td></tr>';
+}
+(async () => {
+  try { await loadRules(); } catch (e) { toast(e.message, true); }
+  setInterval(() => loadRules().catch(() => {}), 15000);
+})();
+</script>
+{% endblock %}

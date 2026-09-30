@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}导入记录 - RustProxyAdmin{% endblock %}
+{% block page_title %}导入记录{% endblock %}
+{% block page_desc %}导入批次记录与明细{% endblock %}
+{% block content %}
+<table class="tbl"><thead><tr>
+  <th>ID</th><th>来源</th><th>格式</th><th>目标节点</th>
+  <th class="num">解析数</th><th class="num">导入数</th><th>时间</th><th>操作</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<div id="pager"></div>
+<script>
+let page = 1;
+const perPage = 20;
+const STYPE = { clash: 'Clash', singbox: 'Sing-box', base64: 'Base64', uri_list: 'URI 列表', paste: '粘贴' };
+async function load() {
+  const d = await api('GET', `/api/import/records?page=${page}&page_size=${perPage}`);
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = d.items.map(r => `<tr>
+    <td>${r.id}</td>
+    <td class="mono small">${r.source_url ? esc(r.source_url) : '（粘贴）'}</td>
+    <td>${STYPE[r.source_type] || r.source_type}</td>
+    <td>${esc(r.target_node_name || '-')}</td>
+    <td class="num">${r.parsed_count}</td><td class="num">${r.imported_count}</td>
+    <td class="small">${fmtTime(r.created_at)}</td>
+    <td class="nowrap">
+      <button class="btn btn-sm" onclick="detail(${r.id})">详情</button>
+      <button class="btn btn-sm" onclick="delRec(${r.id}, false)">删记录</button>
+      <button class="btn btn-sm btn-danger" onclick="delRec(${r.id}, true)">连带删条目</button>
+    </td></tr>`).join('');
+  renderPager('pager', d.total, page, perPage, p => { page = p; load(); });
+}
+async function detail(id) {
+  const d = await api('GET', `/api/import/records/${id}`);
+  const rows = d.entries.map(e => `<tr>
+    <td>${e.id}</td><td>${esc(e.name)}</td><td>${e.upstream_type}</td>
+    <td class="mono small">${esc(e.upstream_addr)}</td>
+    <td>${e.enabled ? '启用' : '停用'}</td></tr>`).join('');
+  openModal(`导入记录 #${id}（${d.entries.length} 个条目）`,
+    `<table class="tbl"><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>地址</th><th>状态</th></tr></thead><tbody>${rows || '<tr><td colspan="5">无条目</td></tr>'}</tbody></table>`,
+    null, null);
+}
+async function delRec(id, withEntries) {
+  const msg = withEntries
+    ? `删除记录 #${id}，并连带删除它导入的所有条目（含订阅引用/标签/配额清理）？`
+    : `删除记录 #${id}，保留导入的条目？`;
+  await confirmDo(msg, async () => {
+    const d = await api('DELETE', `/api/import/records/${id}?with_entries=${withEntries ? 1 : 0}`);
+    toast(withEntries ? `已删除记录，连带删除 ${d.deleted_entries} 个条目` : '已删除记录');
+    load();
+  }, '删除');
+}
+load();
+</script>
+{% endblock %}

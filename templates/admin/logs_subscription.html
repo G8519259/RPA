@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}订阅访问日志 - RustProxyAdmin{% endblock %}
+{% block page_title %}订阅访问日志{% endblock %}
+{% block page_desc %}订阅链接访问日志{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <input id="f-sid" type="number" placeholder="订阅 ID" style="width:120px">
+  <select id="f-result">
+    <option value="">全部结果</option>
+    <option value="ok">ok</option><option value="expired">expired</option>
+    <option value="disabled">disabled</option><option value="ip_limit">ip_limit</option>
+    <option value="rate_limited">rate_limited</option><option value="render_error">render_error</option>
+  </select>
+  <button class="btn" onclick="page=1;load()">筛选</button>
+  <span class="muted">订阅链接 404 时，到这里看真实原因</span>
+</div>
+<table class="tbl"><thead><tr>
+  <th>ID</th><th>订阅</th><th>客户端 IP</th><th>格式</th><th>结果</th><th>User-Agent</th><th>时间</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<div id="pager"></div>
+<script>
+let page = 1;
+const perPage = 20;
+const RESULT_TXT = { ok: '成功', expired: '已过期', disabled: '已停用', ip_limit: 'IP 超限', rate_limited: '被限流', render_error: '渲染失败' };
+async function load() {
+  const p = new URLSearchParams({ page, page_size: perPage });
+  const sid = document.getElementById('f-sid').value.trim();
+  const res = document.getElementById('f-result').value;
+  if (sid) p.set('subscription_id', sid);
+  if (res) p.set('result', res);
+  const d = await api('GET', '/api/logs/subscription?' + p.toString());
+  document.getElementById('tbody').innerHTML = d.items.map(r => `<tr>
+    <td>${r.id}</td>
+    <td>${esc(r.subscription_name || '#'+r.subscription_id)}</td>
+    <td class="mono small">${esc(r.client_ip || '-')}</td>
+    <td>${esc(r.format || '-')}</td>
+    <td>${r.result === 'ok'
+      ? '<span class="badge badge-ok">成功</span>'
+      : `<span class="badge badge-warn">${RESULT_TXT[r.result] || esc(r.result)}</span>`}</td>
+    <td class="small mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.user_agent || '')}">${esc(r.user_agent || '-')}</td>
+    <td class="small">${fmtTime(r.created_at)}</td></tr>`).join('');
+  renderPager('pager', d.total, page, perPage, p => { page = p; load(); });
+}
+load();
+</script>
+{% endblock %}

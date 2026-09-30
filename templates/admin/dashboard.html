@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - RustProxyAdmin{% endblock %}
+{% block page_title %}仪表盘{% endblock %}
+{% block page_desc %}流量、节点与条目运行状态一览{% endblock %}
+{% block content %}
+<div class="grid4" id="today"></div>
+<div class="grid2" style="margin-top:16px">
+  <div class="card">
+    <h3>Top 条目 <span class="sub">近 7 天流量</span></h3>
+    <table class="tbl"><thead><tr><th>条目</th><th>类型</th><th class="num">流量</th></tr></thead>
+    <tbody id="top-rules"></tbody></table>
+  </div>
+  <div class="card">
+    <h3>提醒</h3>
+    <div id="alerts"></div>
+  </div>
+</div>
+<script>
+const typeNames = { proxy: '落地代理', forward: '端口转发', tunnel: '中转隧道' };
+const IC = {
+  traffic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>',
+  conn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  node: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg>',
+  layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+};
+function statCard(icon, cls, num, label) {
+  return `<div class="stat-card"><div class="stat-icon ${cls}">${IC[icon]}</div>
+    <div class="stat-body"><div class="stat-num">${num}</div><div class="stat-label">${label}</div></div></div>`;
+}
+(async () => {
+  try {
+    const [ov, p, f, t] = await Promise.all([
+      api('GET', '/api/stats/overview'),
+      api('GET', '/api/proxy?' + qs({ page: 1, page_size: 1 })),
+      api('GET', '/api/forward?' + qs({ page: 1, page_size: 1 })),
+      api('GET', '/api/tunnel?' + qs({ page: 1, page_size: 1 })),
+    ]);
+    document.getElementById('today').innerHTML =
+      statCard('traffic', 'indigo', fmtBytes(ov.today.bytes_up + ov.today.bytes_down), '今日流量') +
+      statCard('conn', 'cyan', ov.today.connections, '今日连接数') +
+      statCard('node', 'emerald', `${ov.online_nodes} / ${ov.total_nodes}`, '在线节点') +
+      statCard('layers', 'violet', p.total + f.total + t.total, `条目总数（代理 ${p.total} / 转发 ${f.total} / 隧道 ${t.total}）`) +
+      statCard('clock', 'amber', fmtBytes(ov.yesterday.bytes_up + ov.yesterday.bytes_down), '昨日流量');
+    document.getElementById('top-rules').innerHTML = ov.top_rules.slice(0, 5).map(r => `
+      <tr><td>${esc(r.name || ('#' + r.rule_id))}</td><td><span class="badge info">${typeNames[r.rule_type] || r.rule_type}</span></td>
+      <td class="num mono">${fmtBytes(r.bytes_up + r.bytes_down)}</td></tr>`).join('')
+      || '<tr><td colspan="3"><div class="empty-state" style="padding:24px"><b>暂无数据</b><p>最近 7 天还没有流量记录</p></div></td></tr>';
+    const alerts = [];
+    for (const e of ov.expiring) alerts.push(`<div class="alert-line warn"><span class="badge warn">即将到期</span><span class="grow">${esc(e.name)}</span><span class="muted mono">${esc(e.expires_at.slice(0, 10))}</span></div>`);
+    for (const q of ov.near_quota) alerts.push(`<div class="alert-line danger"><span class="badge danger">配额预警</span><span class="grow">${esc(q.name || ('#' + q.entry_id))}</span><span class="muted mono">已用 ${(q.usage * 100).toFixed(0)}%</span></div>`);
+    document.getElementById('alerts').innerHTML = alerts.join('')
+      || '<div class="empty-state" style="padding:24px"><b>暂无提醒</b><p>所有条目状态正常</p></div>';
+  } catch (e) { toast(e.message, true); }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}节点监控 - RustProxyAdmin{% endblock %}
+{% block page_title %}节点监控{% endblock %}
+{% block page_desc %}节点实时状态监控{% endblock %}
+{% block content %}
+<div class="node-cards" id="cards"></div>
+<script>
+function sparkSVG(items, key, color) {
+  const W = 280, H = 60, P = 4;
+  const vals = items.map(i => i[key] || 0);
+  const maxV = Math.max(1, ...vals);
+  const n = vals.length;
+  const X = i => n === 1 ? P : P + i * (W - 2 * P) / (n - 1);
+  const Y = v => H - P - (v / maxV) * (H - 2 * P);
+  const d = vals.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+}
+async function loadNodes() {
+  const d = await api('GET', '/api/monitor/nodes');
+  const cards = document.getElementById('cards');
+  cards.innerHTML = '';
+  for (const n of d.items) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <h3>${esc(n.name)} ${n.is_local ? '<span class="badge">本机</span>' : ''}
+        ${n.online ? '<span class="badge ok">在线</span>' : '<span class="badge danger">离线</span>'}</h3>
+      <div class="muted" style="font-size:12px">最近心跳：${esc(n.last_heartbeat_at || (n.is_local ? '本机' : '无'))}</div>
+      <div class="grid4" style="margin:12px 0;grid-template-columns:repeat(3,1fr)">
+        <div><div class="stat-num" style="font-size:20px">${n.cpu != null ? n.cpu.toFixed(1) + '%' : '—'}</div><div class="stat-label">CPU</div></div>
+        <div><div class="stat-num" style="font-size:20px">${n.mem != null ? n.mem.toFixed(1) + '%' : '—'}</div><div class="stat-label">内存</div></div>
+        <div><div class="stat-num" style="font-size:20px">${n.conns != null ? n.conns : '—'}</div><div class="stat-label">连接数</div></div>
+      </div>
+      <div class="muted" style="font-size:12px">上行 ${n.net_up_bps != null ? fmtBps(n.net_up_bps) : '—'} / 下行 ${n.net_down_bps != null ? fmtBps(n.net_down_bps) : '—'}</div>
+      <div id="spark-${n.id}" class="muted" style="font-size:12px;margin-top:8px">近 30 分钟连接数</div>`;
+    cards.appendChild(card);
+    // 迷你折线
+    try {
+      const m = await api('GET', `/api/monitor/nodes/${n.id}/metrics?` + qs({ minutes: 30 }));
+      if (m.items.length > 1) {
+        document.getElementById(`spark-${n.id}`).innerHTML =
+          '近 30 分钟连接数' + sparkSVG(m.items, 'conns', '#4da3ff');
+      } else {
+        document.getElementById(`spark-${n.id}`).innerHTML = '<span class="muted">暂无指标数据</span>';
+      }
+    } catch (e) {
+      document.getElementById(`spark-${n.id}`).innerHTML = '';
+    }
+  }
+}
+(async () => {
+  try { await loadNodes(); } catch (e) { toast(e.message, true); }
+  setInterval(() => loadNodes().catch(() => {}), 30000);
+})();
+</script>
+{% endblock %}

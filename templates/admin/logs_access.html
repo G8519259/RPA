@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}访问日志 - RustProxyAdmin{% endblock %}
+{% block page_title %}访问日志{% endblock %}
+{% block page_desc %}代理访问日志（连接与流量）{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <input id="f-node" type="number" placeholder="节点 ID" style="width:110px">
+  <select id="f-rtype"><option value="">全部类型</option><option value="proxy">proxy</option><option value="forward">forward</option><option value="tunnel">tunnel</option></select>
+  <input id="f-rid" type="number" placeholder="条目 ID" style="width:110px">
+  <input id="f-ip" placeholder="客户端 IP" style="width:140px">
+  <input id="f-from" type="date" style="width:150px">
+  <input id="f-to" type="date" style="width:150px">
+  <button class="btn" onclick="page=1;load()">筛选</button>
+  <button class="btn" onclick="doExport()">导出 CSV</button>
+</div>
+<table class="tbl"><thead><tr>
+  <th>ID</th><th>节点</th><th>类型</th><th>条目</th><th>客户端 IP</th>
+  <th>开始</th><th>结束</th><th class="num">上行</th><th class="num">下行</th><th>状态</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<div id="pager"></div>
+<script>
+let page = 1;
+const perPage = 20;
+function qs(exportMode) {
+  const p = new URLSearchParams();
+  if (!exportMode) { p.set('page', page); p.set('page_size', perPage); }
+  const v = id => document.getElementById(id).value.trim();
+  if (v('f-node')) p.set('node_id', v('f-node'));
+  if (v('f-rtype')) p.set('rule_type', v('f-rtype'));
+  if (v('f-rid')) p.set('rule_id', v('f-rid'));
+  if (v('f-ip')) p.set('client_ip', v('f-ip'));
+  if (v('f-from')) p.set('from', v('f-from') + ' 00:00:00');
+  if (v('f-to')) p.set('to', v('f-to') + ' 23:59:59');
+  return p.toString();
+}
+async function load() {
+  const d = await api('GET', '/api/logs/access?' + qs(false));
+  document.getElementById('tbody').innerHTML = d.items.map(r => `<tr>
+    <td>${r.id}</td><td>${r.node_id}</td><td>${r.rule_type}</td><td>${r.rule_id}</td>
+    <td class="mono small">${esc(r.client_ip || '-')}</td>
+    <td class="small">${fmtTime(r.started_at)}</td><td class="small">${r.ended_at ? fmtTime(r.ended_at) : '-'}</td>
+    <td class="num">${fmtBytes(r.bytes_up)}</td><td class="num">${fmtBytes(r.bytes_down)}</td>
+    <td class="small">${esc(r.status || '-')}</td></tr>`).join('');
+  renderPager('pager', d.total, page, perPage, p => { page = p; load(); });
+}
+async function doExport() {
+  const resp = await fetch('/api/logs/access/export?' + qs(true), { credentials: 'same-origin' });
+  if (!resp.ok) return toast('导出失败', true);
+  const blob = await resp.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'access_logs.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+load();
+</script>
+{% endblock %}

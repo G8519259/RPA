@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}流量配额 - RustProxyAdmin{% endblock %}
+{% block page_title %}流量配额{% endblock %}
+{% block page_desc %}流量配额设置与用量总览{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <select id="f-filter" onchange="loadQuotas()">
+    <option value="all">全部</option>
+    <option value="exceeded">已超限</option>
+    <option value="near">接近超限（≥80%）</option>
+  </select>
+  <button class="btn" onclick="loadQuotas()">刷新</button>
+</div>
+<div class="grid3" id="q-summary" style="margin-bottom:12px"></div>
+<div class="card">
+  <table class="tbl"><thead><tr>
+    <th>条目</th><th>类型</th><th>周期</th><th>用量 / 配额</th><th>使用率</th><th>状态</th><th>操作</th>
+  </tr></thead><tbody id="q-rows"></tbody></table>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+const ETYPE_NAME = {proxy:'落地代理', forward:'端口转发', tunnel:'中转隧道'};
+function fmtBytes(b){ if(b==null) return '-'; const u=['B','KB','MB','GB','TB','PB']; let i=0; while(b>=1024&&i<5){b/=1024;i++;} return b.toFixed(i?2:0)+' '+u[i]; }
+async function loadQuotas(){
+  const f = document.getElementById('f-filter').value;
+  let data;
+  try { data = await api('GET', '/api/quotas?filter='+f); }
+  catch(e){ toast('加载失败：'+e.message, true); return; }
+  const s = data.summary;
+  document.getElementById('q-summary').innerHTML =
+    stat('条目数', s.total) + stat('已超限', s.exceeded) + stat('接近超限', s.near);
+  const tb = document.getElementById('q-rows');
+  tb.innerHTML = data.items.map(v => {
+    const pct = Math.min(100, v.pct||0);
+    const cls2 = v.status=='exceeded' ? 'danger' : (pct>=80 ? 'warn' : '');
+    const st = v.status=='exceeded' ? '<span class="badge danger">已超限</span>'
+      : (pct>=80 ? '<span class="badge warn">接近超限</span>' : '<span class="badge ok">正常</span>');
+    const dis = v.disabled_reason ? ' <span class="badge">'+disReason(v.disabled_reason)+'</span>' : '';
+    const period = v.period=='monthly' ? '每月（'+v.reset_day+'日重置）' : '累计';
+    return `<tr><td>${esc(v.name)} <span class="muted">#${v.entry_id}</span></td>
+      <td>${ETYPE_NAME[v.entry_type]||v.entry_type}</td><td>${period}</td>
+      <td>${fmtBytes(v.used_bytes)} / ${fmtBytes(v.quota_bytes)}</td>
+      <td><div class="pbar"><div class="pfill ${cls2}" style="width:${pct}%"></div></div><span class="muted">${pct}%</span></td>
+      <td>${st}${dis}</td>
+      <td><button class="btn btn-sm" onclick="resetQuota('${v.entry_type}',${v.entry_id})">重置用量</button>
+          <button class="btn btn-sm" onclick="editQuota('${v.entry_type}',${v.entry_id},${v.quota_bytes},'${v.period}',${v.reset_day})">调整配额</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="muted">暂无配额记录</td></tr>';
+}
+function stat(k, v){ return `<div class="card"><h3>${k}</h3><div class="stat-num">${v}</div></div>`; }
+function disReason(r){ return {manual:'手动停用', expired:'已到期', quota:'配额用尽'}[r]||r; }
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function resetQuota(t, id){
+  confirmDo('确认重置该条目本周期用量？', async ()=>{
+    try {
+      const r = await api('POST', `/api/entries/${t}/${id}/quota/reset`);
+      toast(r.recovered ? '用量已重置，条目已恢复' : '用量已重置'); loadQuotas();
+    } catch(e){ toast('重置失败：'+e.message, true); }
+  }, '重置');
+}
+function editQuota(t, id, quota, period, resetDay){
+  openModal('调整配额', `
+    <label>配额（字节，0=取消）<input id="mq-quota" type="number" value="${quota}"></label>
+    <label>周期<select id="mq-period">
+      <option value="total" ${period=='total'?'selected':''}>累计</option>
+      <option value="monthly" ${period=='monthly'?'selected':''}>每月</option></select></label>
+    <label>每月重置日（1-28）<input id="mq-day" type="number" min="1" max="28" value="${resetDay||1}"></label>
+    <div class="muted">常用：1GB=${1<<30}，10GB=${10*(1<<30)}</div>`, async ()=>{
+    const body = { quota_bytes: parseInt(document.getElementById('mq-quota').value||'0'),
+      period: document.getElementById('mq-period').value,
+      reset_day: parseInt(document.getElementById('mq-day').value||'1') };
+    try {
+      const r = await api('PUT', `/api/entries/${t}/${id}/quota`, body);
+      toast(r.recovered ? '配额已更新，条目已恢复' : '配额已更新'); loadQuotas();
+    } catch(e){ toast('更新失败：'+e.message, true); }
+  });
+}
+loadQuotas();
+</script>
+{% endblock %}

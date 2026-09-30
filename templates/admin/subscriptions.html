@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}订阅管理 - RustProxyAdmin{% endblock %}
+{% block page_title %}订阅管理{% endblock %}
+{% block page_desc %}订阅管理、分享链接与访问统计{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <input id="f-q" placeholder="搜索订阅名称" style="width:200px">
+  <select id="f-enabled"><option value="">全部状态</option><option value="1">启用</option><option value="0">停用</option></select>
+  <button class="btn" onclick="load()">筛选</button>
+  {% if role != 'viewer' %}<button class="btn btn-primary" onclick="openForm()">新建订阅</button>{% endif %}
+  <span class="muted">订阅地址形如：<span class="mono" id="sub-base"></span>/sub/&lt;token&gt;</span>
+</div>
+<table class="tbl"><thead><tr>
+  <th></th><th>名称</th><th>范围</th><th>默认格式</th><th class="num">节点数</th>
+  <th class="num">访问次数</th><th>最后访问</th><th>到期</th><th>状态</th><th>操作</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<div id="pager"></div>
+<script>
+let page = 1;
+const perPage = 20;
+const SCOPE_TXT = { single: '单个条目', custom: '手工勾选', all: '全部条目', rule: '按规则匹配' };
+const KIND_TXT = { group: '分组', tag: '标签', node: '节点', type: '类型' };
+document.getElementById('sub-base').textContent = location.origin;
+
+async function load() {
+  const q = document.getElementById('f-q').value.trim();
+  const en = document.getElementById('f-enabled').value;
+  let url = `/api/subscriptions?page=${page}&page_size=${perPage}`;
+  if (q) url += `&q=${encodeURIComponent(q)}`;
+  if (en !== '') url += `&enabled=${en}`;
+  const d = await api('GET', url);
+  document.getElementById('tbody').innerHTML = d.items.map(s => `
+    <tr>
+      <td><input type="checkbox" class="row-ck" value="${s.id}"></td>
+      <td><b>${esc(s.name)}</b>${s.description ? `<div class="muted">${esc(s.description)}</div>` : ''}
+        ${s.token ? `<div class="mono" style="font-size:11px">${esc(s.token.slice(0, 12))}…</div>` : ''}</td>
+      <td>${SCOPE_TXT[s.scope] || esc(s.scope)}</td>
+      <td><span class="badge">${esc(s.default_format)}</span></td>
+      <td class="num" id="rc-${s.id}">…</td>
+      <td class="num">${s.access_count}</td>
+      <td class="muted">${s.last_access_at ? fmtTime(s.last_access_at) : '-'}</td>
+      <td>${expireCell(s)}</td>
+      <td>${badgeFor(s.enabled, s.disabled_reason)}</td>
+      <td style="white-space:nowrap">
+        ${s.token ? `<button class="btn btn-sm" onclick="showUrl(${s.id}, '${esc(s.token)}')">地址</button>` : ''}
+        ${IS_VIEWER ? '' : `<button class="btn btn-sm" onclick="openForm(${s.id})">编辑</button>`}
+        <button class="btn btn-sm" onclick="showDetail(${s.id})">详情</button>
+        <button class="btn btn-sm" onclick="previewSub(${s.id})">预览</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="10" class="muted" style="text-align:center">暂无订阅</td></tr>';
+  document.getElementById('pager').innerHTML = pagerHtml(d.total, d.page, d.page_size, 'goto')
+    + (IS_VIEWER ? '' : ` <button class="btn btn-sm btn-danger" onclick="batchDel()">批量删除</button>`);
+  d.items.forEach(async s => {
+    try {
+      const det = await api('GET', `/api/subscriptions/${s.id}`);
+      const el = document.getElementById(`rc-${s.id}`);
+      if (el) el.textContent = det.resolved_count;
+    } catch (e) { /* ignore */ }
+  });
+}
+function goto(p) { page = p; load().catch(e => toast(e.message, true)); }
+function expireCell(s) {
+  if (!s.expires_at) return '<span class="muted">永久</span>';
+  const past = s.expires_at < new Date().toISOString().slice(0, 19).replace('T', ' ');
+  return `<span class="${past ? 'badge bad' : 'badge'}">${fmtTime(s.expires_at)}</span>`;
+}
+function showUrl(id, token) {
+  const url = `${location.origin}/sub/${token}`;
+  openModal('订阅地址', `
+    <div class="form-row"><label>订阅地址（?format=clash/singbox/json/base64 可覆盖格式）</label>
+      <div class="codebox" style="word-break:break-all">${esc(url)}</div></div>
+    <button class="btn" onclick="copyText('${esc(url)}')">复制地址</button>
+    ${IS_VIEWER ? '' : `<button class="btn btn-sm btn-danger" style="margin-left:8px" onclick="regen(${id})">轮换 Token（旧地址立即失效）</button>`}`,
+    () => {}, '关闭');
+}
+async function regen(id) {
+  const d = await api('POST', `/api/subscriptions/${id}/rotate_token`);
+  toast('Token 已轮换，旧地址已失效');
+  closeModal();
+  showUrl(id, d.token);
+}
+async function previewSub(id) {
+  const s = (await api('GET', `/api/subscriptions/${id}`)).subscription;
+  const fmt = prompt('预览格式（clash/singbox/json/base64）：', s.default_format) || s.default_format;
+  const r = await fetch(`/api/subscriptions/${id}/preview?format=${encodeURIComponent(fmt)}`, { credentials: 'same-origin' });
+  const text = await r.text();
+  openModal(`导出预览（${esc(fmt)}）`, `<pre class="codebox" style="max-height:400px;overflow:auto">${esc(text.slice(0, 8000))}</pre>`, () => {}, '关闭');
+}
+async function batchDel() {
+  const ids = [...document.querySelectorAll('.row-ck:checked')].map(c => +c.value);
+  if (!ids.length) return toast('请先勾选', true);
+  confirmDo(`删除选中的 ${ids.length} 个订阅？`, async () => {
+    await api('POST', '/api/subscriptions/batch_delete', { ids });
+    toast('已删除'); load();
+  }, '删除');
+}
+
+// ---------- 新建/编辑 ----------
+let entryCache = null;
+async function allEntries() {
+  if (entryCache) return entryCache;
+  const [p, f, t] = await Promise.all([
+    api('GET', '/api/proxy?page=1&page_size=500'),
+    api('GET', '/api/forward?page=1&page_size=500'),
+    api('GET', '/api/tunnel?page=1&page_size=500'),
+  ]);
+  entryCache = {
+    proxy: p.items || p, forward: f.items || f, tunnel: t.items || t,
+  };
+  return entryCache;
+}
+const ET_TXT = { proxy: '代理', forward: '转发', tunnel: '隧道' };
+
+async function openForm(id) {
+  let s = null, det = null;
+  if (id) { det = await api('GET', `/api/subscriptions/${id}`); s = det.subscription; }
+  const scope = s ? s.scope : 'all';
+  const v = k => s ? (s[k] ?? '') : '';
+  openModal(id ? '编辑订阅' : '新建订阅', `
+    <div class="form-grid">
+      <div class="form-row"><label>名称 *</label><input id="s-name" value="${esc(v('name'))}"></div>
+      <div class="form-row"><label>描述</label><input id="s-desc" value="${esc(v('description'))}"></div>
+      <div class="form-row"><label>范围 *</label><select id="s-scope" onchange="scopeChanged()">
+        ${Object.keys(SCOPE_TXT).map(x => `<option value="${x}" ${scope === x ? 'selected' : ''}>${SCOPE_TXT[x]}</option>`).join('')}</select></div>
+      <div class="form-row"><label>默认格式 *</label><select id="s-fmt">
+        ${['clash', 'singbox', 'json', 'base64'].map(x => `<option ${v('default_format') === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+      <div class="form-row"><label>有效期</label><select id="s-preset">
+        <option value="permanent" ${!s || !s.expires_at ? 'selected' : ''}>永久</option>
+        <option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option>
+        <option value="custom" ${s && s.expires_at ? 'selected' : ''}>自定义（保持当前）</option></select></div>
+      <div class="form-row"><label>输出模板</label><select id="s-tpl"><option value="">默认输出</option></select>
+        <span class="muted">仅 clash/singbox 生效，格式需与默认格式一致</span></div>
+      <div class="form-row"><label>同时在线 IP 上限</label><input id="s-maxips" type="number" min="0" value="${v('max_ips') === '' ? '' : v('max_ips')}" placeholder="留空不限"></div>
+    </div>
+    <div id="scope-single" style="display:none" class="form-row"><label>选择一个条目 *</label><select id="s-single"></select></div>
+    <div id="scope-custom" style="display:none" class="form-row"><label>手工勾选</label>
+      <div class="muted">保存后在「详情 → 条目管理」中勾选多个条目（按顺序导出）。</div></div>
+    <div id="scope-rule" style="display:none" class="form-row"><label>匹配规则（include 先并集，再减去 exclude）</label>
+      <div id="rule-list"></div>
+      <button class="btn btn-sm" onclick="addRuleRow()">+ 添加规则</button>
+      <button class="btn btn-sm" onclick="previewDraft()">预览命中数</button>
+      <span class="muted" id="draft-count"></span></div>`,
+    async () => {
+      const sc = document.getElementById('s-scope').value;
+      const entries = [];
+      if (sc === 'single') {
+        const [et, eid] = document.getElementById('s-single').value.split(':');
+        if (!eid) throw new Error('请选择一个条目');
+        entries.push({ entry_type: et, entry_id: +eid });
+      }
+      const body = {
+        name: document.getElementById('s-name').value.trim(),
+        description: document.getElementById('s-desc').value.trim() || null,
+        scope: sc,
+        default_format: document.getElementById('s-fmt').value,
+        expire_preset: document.getElementById('s-preset').value,
+        max_ips: document.getElementById('s-maxips').value ? +document.getElementById('s-maxips').value : null,
+        template_id: document.getElementById('s-tpl').value ? +document.getElementById('s-tpl').value : null,
+        entries,
+        rules: collectRules(),
+      };
+      if (id) await api('PUT', `/api/subscriptions/${id}`, body);
+      else await api('POST', '/api/subscriptions', body);
+      toast('已保存'); load();
+    }, '保存');
+  // single 下拉
+  const es = await allEntries();
+  const opts = [];
+  for (const et of ['proxy', 'forward', 'tunnel'])
+    for (const e of es[et]) opts.push(`<option value="${et}:${e.id}">[${ET_TXT[et]}] ${esc(e.name)}</option>`);
+  document.getElementById('s-single').innerHTML = opts.join('') || '<option value="">暂无条目</option>';
+  if (det && det.entries && det.entries[0]) {
+    const e0 = det.entries[0];
+    document.getElementById('s-single').value = `${e0.entry_type}:${e0.entry_id}`;
+  }
+  // rule 回填
+  (det?.rules || []).forEach(r => addRuleRow(r));
+  // 模板下拉
+  try {
+    const tpls = await api('GET', '/api/templates');
+    const sel = document.getElementById('s-tpl');
+    for (const t of tpls) sel.insertAdjacentHTML('beforeend',
+      `<option value="${t.id}"${s && s.template_id === t.id ? ' selected' : ''}>[${t.format}] ${esc(t.name)}${t.is_builtin ? '（内置）' : ''}</option>`);
+  } catch (e) {}
+  scopeChanged();
+}
+function scopeChanged() {
+  const sc = document.getElementById('s-scope').value;
+  document.getElementById('scope-single').style.display = sc === 'single' ? '' : 'none';
+  document.getElementById('scope-custom').style.display = sc === 'custom' ? '' : 'none';
+  document.getElementById('scope-rule').style.display = sc === 'rule' ? '' : 'none';
+}
+function addRuleRow(r) {
+  r = r || { kind: 'group', value: '', mode: 'include' };
+  const div = document.createElement('div');
+  div.className = 'rule-row';
+  div.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+  div.innerHTML = `
+    <select class="r-mode"><option value="include" ${r.mode === 'include' ? 'selected' : ''}>包含</option><option value="exclude" ${r.mode === 'exclude' ? 'selected' : ''}>排除</option></select>
+    <select class="r-kind">${Object.keys(KIND_TXT).map(k => `<option value="${k}" ${r.kind === k ? 'selected' : ''}>${KIND_TXT[k]}</option>`).join('')}</select>
+    <input class="r-value" style="flex:1" placeholder="group/tag 名、node id、proxy/forward/tunnel" value="${esc(r.value)}">
+    <button class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">删</button>`;
+  document.getElementById('rule-list').appendChild(div);
+}
+function collectRules() {
+  return [...document.querySelectorAll('.rule-row')].map(row => ({
+    kind: row.querySelector('.r-kind').value,
+    value: row.querySelector('.r-value').value.trim(),
+    mode: row.querySelector('.r-mode').value,
+  })).filter(r => r.value);
+}
+async function previewDraft() {
+  const d = await api('POST', '/api/subscriptions/resolve_preview', {
+    scope: document.getElementById('s-scope').value,
+    entries: [], rules: collectRules(),
+  });
+  document.getElementById('draft-count').textContent = `命中 ${d.count} 个条目`;
+}
+
+// ---------- 详情 ----------
+async function showDetail(id) {
+  const det = await api('GET', `/api/subscriptions/${id}`);
+  const s = det.subscription;
+  const stats = await api('GET', `/api/subscriptions/${id}/stats`).catch(() => null);
+  openModal(`订阅详情：${esc(s.name)}`, `
+    ${s.token ? `<div class="form-row"><label>订阅地址</label><div class="codebox" style="word-break:break-all">${esc(location.origin)}/sub/${esc(s.token)}</div></div>` : ''}
+    <div class="form-row"><label>统计</label><div class="muted">访问 ${s.access_count} 次 · 24h 不同 IP ${stats ? stats.distinct_ips_24h : '-'} 个
+      ${s.disabled_reason ? ` · 停用原因：${esc(s.disabled_reason)}` : ''}</div></div>
+    <div class="toolbar" style="margin:8px 0">
+      ${s.token ? `<button class="btn btn-sm" onclick="showUrl(${s.id}, '${esc(s.token)}')">地址/轮换</button>` : ''}
+      ${IS_VIEWER ? '' : `
+      <button class="btn btn-sm" onclick="extendSub(${s.id})">续期</button>
+      <button class="btn btn-sm" onclick="toggleSub(${s.id}, ${s.enabled ? 0 : 1})">${s.enabled ? '停用' : '启用'}</button>
+      <button class="btn btn-sm" onclick="manageEntries(${s.id})">条目管理</button>`}
+      <button class="btn btn-sm" onclick="showResolved(${s.id})">命中条目 (${det.resolved_count})</button>
+    </div>
+    <div class="form-row"><label>规则</label>
+      ${(det.rules || []).map(r => `<span class="badge" style="margin:2px">${r.mode === 'include' ? '包含' : '排除'} ${KIND_TXT[r.kind] || r.kind}: ${esc(r.value)}</span>`).join('') || '<span class="muted">无</span>'}</div>`,
+    () => {}, '关闭');
+}
+async function extendSub(id) {
+  const days = prompt('续期天数：', '30');
+  if (!days) return;
+  const d = await api('POST', `/api/subscriptions/${id}/extend`, { days: +days });
+  toast(d.message || `已续期至 ${d.expires_at}`); load();
+}
+async function toggleSub(id, enabled) {
+  await api('POST', `/api/subscriptions/${id}/toggle`, { enabled: !!enabled });
+  toast('已更新'); closeModal(); load();
+}
+async function showResolved(id) {
+  const d = await api('GET', `/api/subscriptions/${id}/resolved`);
+  openModal(`命中条目（${d.count}）`, `
+    <div style="max-height:360px;overflow:auto"><table class="tbl"><thead><tr><th>类型</th><th>名称</th><th>状态</th></tr></thead>
+    <tbody>${d.items.map(e => `<tr><td>${ET_TXT[e.entry_type] || e.entry_type}</td><td>${e.missing ? `<span class="muted">#${e.entry_id}（已删除）</span>` : esc(e.name)}</td><td>${e.enabled ? '启用' : '停用'}</td></tr>`).join('')}</tbody></table></div>`,
+    () => {}, '关闭');
+}
+async function manageEntries(id) {
+  const es = await allEntries();
+  const cur = await api('GET', `/api/subscriptions/${id}/entries`);
+  const picked = new Set(cur.map(e => `${e.entry_type}:${e.entry_id}`));
+  const rows = [];
+  for (const et of ['proxy', 'forward', 'tunnel'])
+    for (const e of es[et]) {
+      const k = `${et}:${e.id}`;
+      rows.push(`<label style="display:block;margin:3px 0"><input type="checkbox" class="me-ck" value="${k}" ${picked.has(k) ? 'checked' : ''}> [${ET_TXT[et]}] ${esc(e.name)}</label>`);
+    }
+  openModal('条目管理（勾选顺序即导出顺序）', `<div style="max-height:360px;overflow:auto">${rows.join('')}</div>`,
+    async () => {
+      const entries = [...document.querySelectorAll('.me-ck:checked')].map(c => {
+        const [entry_type, entry_id] = c.value.split(':');
+        return { entry_type, entry_id: +entry_id };
+      });
+      await api('PUT', `/api/subscriptions/${id}/entries`, { entries });
+      toast('已保存');
+    }, '保存');
+}
+load().catch(e => toast(e.message, true));
+</script>
+{% endblock %}

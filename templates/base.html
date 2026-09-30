@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf" content="{{ csrf }}">
+<title>{% block title %}RustProxyAdmin{% endblock %}</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<script src="/static/js/app.js"></script>
+{% block head %}{% endblock %}
+</head>
+<body>
+{% if is_default_password %}
+<div class="warn-banner">⚠️ 正在使用默认初始密码，请立即前往 <a href="/admin/account">账户设置</a> 修改。</div>
+{% endif %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></span>
+      <span class="logo-text">RustProxyAdmin<small>代理管理控制台</small></span>
+    </div>
+    <nav>
+      <a href="/admin" class="{% if active == "dashboard" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="nav-txt">仪表盘</span></a>
+      <div class="nav-group">条目管理</div>
+      <a href="/admin/proxy" class="{% if active == "proxy" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z"/></svg></span><span class="nav-txt">落地代理</span></a>
+      <a href="/admin/forward" class="{% if active == "forward" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3L4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg></span><span class="nav-txt">端口转发</span></a>
+      <a href="/admin/tunnel" class="{% if active == "tunnel" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5"/></svg></span><span class="nav-txt">中转隧道</span></a>
+      <a href="/admin/groups" class="{% if active == "groups" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4L11 3.8A2 2 0 0 0 9.6 3.2H4a1 1 0 0 0-1 1v5.6c0 .5.2 1 .6 1.4l9.6 9.6a2 2 0 0 0 2.8 0l4.6-4.6a2 2 0 0 0 0-2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg></span><span class="nav-txt">分组与标签</span></a>
+      <div class="nav-group">节点与监控</div>
+      <a href="/admin/nodes" class="{% if active == "nodes" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg></span><span class="nav-txt">服务器节点</span></a>
+      <a href="/admin/monitor/nodes" class="{% if active == "monitor_nodes" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 8-6-16-3 8H2"/></svg></span><span class="nav-txt">节点监控</span></a>
+      <a href="/admin/monitor/rules" class="{% if active == "monitor_rules" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20v-6M10 20V9M15 20v-7M20 20V5"/></svg></span><span class="nav-txt">条目监控</span></a>
+      <div class="nav-group">日志与统计</div>
+      <a href="/admin/logs/audit" class="{% if active == "logs_audit" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg></span><span class="nav-txt">操作日志</span></a>
+      <a href="/admin/logs/access" class="{% if active == "logs_access" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2"/><path d="M7.5 7.5a6.4 6.4 0 0 0 0 9M16.5 7.5a6.4 6.4 0 0 1 0 9M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8"/></svg></span><span class="nav-txt">访问日志</span></a>
+      <a href="/admin/logs/subscription" class="{% if active == "logs_subscription" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span><span class="nav-txt">订阅访问日志</span></a>
+      <a href="/admin/stats" class="{% if active == "stats" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M8 17v-6M13 17V7M18 17v-3"/></svg></span><span class="nav-txt">统计</span></a>
+      <div class="nav-group">订阅</div>
+      <a href="/admin/subscriptions" class="{% if active == "subscriptions" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7l8.7 5 8.7-5M12 22V12"/></svg></span><span class="nav-txt">订阅管理</span></a>
+      <a href="/admin/templates" class="{% if active == "templates" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span><span class="nav-txt">输出模板</span></a>
+      <div class="nav-group">导入与配额</div>
+      <a href="/admin/import" class="{% if active == "import" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></span><span class="nav-txt">导入订阅</span></a>
+      <a href="/admin/import/records" class="{% if active == "import_records" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/></svg></span><span class="nav-txt">导入记录</span></a>
+      <a href="/admin/quotas" class="{% if active == "quotas" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span><span class="nav-txt">流量配额</span></a>
+      <div class="nav-group">系统</div>
+      <a href="/admin/alerts" class="{% if active == "alerts" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span><span class="nav-txt">告警中心</span></a>
+      <a href="/admin/account" class="{% if active == "account" %}active{% endif %}"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-txt">账户设置</span></a>
+    </nav>
+    <div class="sidebar-foot">RustProxyAdmin v7</div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <span class="topbar-crumb">控制台</span>
+      <span class="user-chip">
+        <span class="user-meta"><span class="uname" id="uname">{{ username }}</span><br><span class="role-badge {% if role == "viewer" %}viewer{% endif %}">{{ role }}</span></span>
+        <span class="avatar" id="avatar">?</span>
+        <button class="btn btn-sm btn-ghost" onclick="logout()" title="退出登录"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
+      </span>
+    </header>
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <h1 class="page-head-title">{% block page_title %}{% endblock %}</h1>
+          <p class="page-head-desc">{% block page_desc %}{% endblock %}</p>
+        </div>
+        <div class="page-head-actions">{% block page_actions %}{% endblock %}</div>
+      </div>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="modal-root"></div>
+<script>
+const ROLE = "{{ role }}"; const IS_VIEWER = ROLE === "viewer";
+document.getElementById('avatar').textContent = (document.getElementById('uname').textContent || '?').trim().charAt(0).toUpperCase();
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>

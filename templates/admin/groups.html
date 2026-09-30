@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}分组管理 - RustProxyAdmin{% endblock %}
+{% block page_title %}分组管理{% endblock %}
+{% block page_desc %}分组与标签管理，用于订阅规则匹配{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <button class="btn btn-primary" onclick="openForm()">新建分组</button>
+  <span class="muted">拖拽排序、合并分组请在操作列中进行</span>
+</div>
+<table class="tbl"><thead><tr>
+  <th>排序</th><th>名称</th><th>颜色</th><th>描述</th>
+  <th class="num">落地代理</th><th class="num">端口转发</th><th class="num">中转隧道</th><th>操作</th>
+</tr></thead><tbody id="tbody"></tbody></table>
+<script>
+let groups = [];
+async function load() {
+  groups = await api('GET', '/api/groups');
+  document.getElementById('tbody').innerHTML = groups.map((g, i) => `
+    <tr>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" ${i === 0 ? 'disabled' : ''} onclick="move(${i},-1)">↑</button>
+        <button class="btn btn-sm" ${i === groups.length - 1 ? 'disabled' : ''} onclick="move(${i},1)">↓</button>
+      </td>
+      <td><b>${esc(g.name)}</b></td>
+      <td><span class="groupchip" style="background:${esc(g.color)}">${esc(g.color)}</span></td>
+      <td class="muted">${esc(g.description || '-')}</td>
+      <td class="num">${g.entry_counts.proxy}</td>
+      <td class="num">${g.entry_counts.forward}</td>
+      <td class="num">${g.entry_counts.tunnel}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="openForm(${g.id})">编辑</button>
+        <button class="btn btn-sm" onclick="openMerge(${g.id})">合并</button>
+        <button class="btn btn-sm btn-danger" onclick="del(${g.id}, '${esc(g.name).replace(/'/g, "\\'")}')">删除</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="8" class="muted" style="text-align:center">暂无分组</td></tr>';
+}
+async function move(i, dir) {
+  const j = i + dir;
+  [groups[i], groups[j]] = [groups[j], groups[i]];
+  await api('POST', '/api/groups/reorder', { ordered_ids: groups.map(g => g.id) });
+  load().catch(e => toast(e.message, true));
+}
+function openForm(id) {
+  const g = id ? groups.find(x => x.id === id) : null;
+  openModal(id ? '编辑分组' : '新建分组', `
+    <div class="form-row"><label>名称 *</label><input id="g-name" value="${esc(g?.name || '')}"></div>
+    <div class="form-row"><label>颜色</label><input id="g-color" type="color" value="${esc(g?.color || '#3b82f6')}" style="width:80px"></div>
+    <div class="form-row"><label>描述</label><input id="g-desc" value="${esc(g?.description || '')}"></div>`,
+    async () => {
+      const body = { name: document.getElementById('g-name').value.trim(), color: document.getElementById('g-color').value, description: document.getElementById('g-desc').value.trim() || null };
+      if (id) await api('PUT', `/api/groups/${id}`, body);
+      else await api('POST', '/api/groups', body);
+      toast('已保存'); load();
+    }, '保存');
+}
+function openMerge(targetId) {
+  const others = groups.filter(g => g.id !== targetId);
+  if (!others.length) return toast('没有其他分组可合并', true);
+  openModal('合并分组', `
+    <p>将以下分组的条目全部迁入目标分组，并删除源分组：</p>
+    ${others.map(g => `<label style="display:block;margin:4px 0"><input type="checkbox" class="mg-src" value="${g.id}"> ${esc(g.name)}</label>`).join('')}
+    <p class="muted">目标分组：<b>${esc(groups.find(g => g.id === targetId).name)}</b></p>`,
+    async () => {
+      const src = [...document.querySelectorAll('.mg-src:checked')].map(c => +c.value);
+      if (!src.length) return toast('请选择源分组', true);
+      const d = await api('POST', `/api/groups/${targetId}/merge`, { source_ids: src });
+      toast(`已合并，迁移 ${d.moved} 个条目`); load();
+    }, '合并');
+}
+async function del(id, name) {
+  confirmDo(`删除分组「${name}」？该组条目将变为未分组。`, async () => {
+    await api('DELETE', `/api/groups/${id}`);
+    toast('已删除'); load();
+  }, '删除');
+}
+load().catch(e => toast(e.message, true));
+</script>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}告警中心 - RustProxyAdmin{% endblock %}
+{% block page_title %}告警中心{% endblock %}
+{% block page_desc %}告警渠道、规则配置与事件历史{% endblock %}
+{% block content %}
+<div class="tabs" style="margin-bottom:12px">
+  <button class="tab active" data-tab="channels" onclick="switchTab('channels')">渠道</button>
+  <button class="tab" data-tab="rules" onclick="switchTab('rules')">规则</button>
+  <button class="tab" data-tab="events" onclick="switchTab('events')">事件历史</button>
+</div>
+
+<div id="tab-channels">
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="editChannel()"{% if role == 'viewer' %} style="display:none"{% endif %}>新建渠道</button>
+    <button class="btn" onclick="loadChannels()">刷新</button>
+  </div>
+  <div class="card"><table class="tbl"><thead><tr>
+    <th>名称</th><th>类型</th><th>配置</th><th>状态</th><th>操作</th>
+  </tr></thead><tbody id="ch-rows"></tbody></table></div>
+  <p class="muted" style="margin-top:8px">⚠️ 渠道密钥明文存于数据库，请保证 data.db 权限为 600；备份文件请妥善保管。{% if role != 'viewer' %}如已在 config.toml [server] 配置 secret_key，新建/修改的渠道密钥将自动 AES-256-GCM 加密存储。{% endif %}</p>
+</div>
+
+<div id="tab-rules" style="display:none">
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="editRule()"{% if role == 'viewer' %} style="display:none"{% endif %}>新建规则</button>
+    <button class="btn" onclick="loadRules()">刷新</button>
+  </div>
+  <div class="card"><table class="tbl"><thead><tr>
+    <th>名称</th><th>事件类型</th><th>阈值参数</th><th>绑定渠道</th><th>冷却</th><th>状态</th><th>操作</th>
+  </tr></thead><tbody id="ru-rows"></tbody></table></div>
+</div>
+
+<div id="tab-events" style="display:none">
+  <div class="toolbar">
+    <select id="ev-status" onchange="loadEvents()"><option value="">全部状态</option><option value="pending">待发送</option><option value="sent">已发送</option><option value="failed">失败</option></select>
+    <select id="ev-type" onchange="loadEvents()"><option value="">全部类型</option></select>
+    <button class="btn" onclick="loadEvents()">刷新</button>
+    <button class="btn" onclick="cleanupEvents()">清理历史</button>
+  </div>
+  <div class="card"><table class="tbl"><thead><tr>
+    <th>时间</th><th>类型</th><th>标题</th><th>严重度</th><th>状态</th><th>重试</th><th>错误</th><th>操作</th>
+  </tr></thead><tbody id="ev-rows"></tbody></table></div>
+  <div class="pager" id="ev-pager"></div>
+</div>
+{% endblock %}
+{% block script %}
+<script src="/static/js/alerts.js"></script>
+<script>initAlerts();</script>
+{% endblock %}

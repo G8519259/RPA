@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}导入订阅 - RustProxyAdmin{% endblock %}
+{% block page_title %}导入订阅{% endblock %}
+{% block page_desc %}从外部订阅链接导入节点{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>1. 获取订阅内容</h3>
+  <div class="form-grid">
+    <div class="form-row"><label>订阅 URL</label><input id="i-url" placeholder="https://...（留空则用下方粘贴内容）"></div>
+    <div class="form-row"><label>或粘贴内容</label><textarea id="i-content" rows="6" placeholder="Clash YAML / Sing-box JSON / base64 / URI 列表"></textarea></div>
+  </div>
+  <button class="btn btn-primary" onclick="doParse()">解析</button>
+  <span class="muted" id="i-srcinfo"></span>
+</div>
+
+<div class="card" id="i-result" style="display:none">
+  <h3>2. 预览解析结果 <span class="muted small" id="i-count"></span></h3>
+  <div class="toolbar">
+    <button class="btn btn-sm" onclick="checkAll(true)">全选</button>
+    <button class="btn btn-sm" onclick="checkAll(false)">全不选</button>
+    <button class="btn btn-sm" onclick="checkNondup()">只选不重复</button>
+    <span class="muted small">红色为与现有条目 (类型,地址) 重复，导入时会自动跳过</span>
+  </div>
+  <table class="tbl"><thead><tr>
+    <th></th><th>名称</th><th>类型</th><th>地址</th><th>状态</th>
+  </tr></thead><tbody id="i-tbody"></tbody></table>
+</div>
+
+<div class="card" id="i-confirm" style="display:none">
+  <h3>3. 确认导入</h3>
+  <div class="form-grid">
+    <div class="form-row"><label>导入到节点 *</label><select id="i-node"></select></div>
+    <div class="form-row"><label>名称前缀</label><input id="i-prefix" placeholder="可选，如 [机场A] "></div>
+  </div>
+  <button class="btn btn-primary" onclick="doConfirm()">确认导入</button>
+  <span class="muted">导入的条目不设置配额，其流量不经过本系统</span>
+</div>
+
+<script>
+let parseToken = null;
+let nodes = [];
+
+async function doParse() {
+  const url = document.getElementById('i-url').value.trim();
+  const content = document.getElementById('i-content').value.trim();
+  if (!url && !content) return toast('请填写订阅 URL 或粘贴内容', true);
+  try {
+    const d = await api('POST', '/api/import/parse', { url: url || null, content: content || null });
+    parseToken = d.parse_token; nodes = d.nodes;
+    document.getElementById('i-srcinfo').textContent = `格式：${d.source_type}，解析出 ${d.nodes.length} 个节点`;
+    const tb = document.getElementById('i-tbody');
+    tb.innerHTML = nodes.map(n => `<tr class="${n.duplicate ? 'dup' : ''}">
+      <td><input type="checkbox" data-idx="${n.index}" ${n.duplicate ? '' : 'checked'}></td>
+      <td>${esc(n.name)}</td><td>${n.kind}</td>
+      <td class="mono small">${esc(n.host)}:${n.port}</td>
+      <td>${n.duplicate ? '<span class="badge badge-warn">重复</span>' : '<span class="badge badge-ok">新</span>'}</td>
+    </tr>`).join('');
+    document.getElementById('i-result').style.display = 'block';
+    document.getElementById('i-confirm').style.display = 'block';
+    updateCount();
+    const ns = await api('GET', '/api/nodes');
+    document.getElementById('i-node').innerHTML = (ns.items || ns).map(x =>
+      `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+  } catch (e) { toast(e.message || '解析失败', true); }
+}
+function checkAll(v) {
+  document.querySelectorAll('#i-tbody input[type=checkbox]').forEach(c => c.checked = v);
+  updateCount();
+}
+function checkNondup() {
+  document.querySelectorAll('#i-tbody input[type=checkbox]').forEach((c, i) => c.checked = !nodes[i].duplicate);
+  updateCount();
+}
+function updateCount() {
+  const n = document.querySelectorAll('#i-tbody input[type=checkbox]:checked').length;
+  document.getElementById('i-count').textContent = `已选 ${n} / ${nodes.length}`;
+}
+document.addEventListener('change', e => {
+  if (e.target.matches('#i-tbody input[type=checkbox]')) updateCount();
+});
+async function doConfirm() {
+  const sel = [];
+  document.querySelectorAll('#i-tbody input[type=checkbox]:checked').forEach(c => sel.push(+c.dataset.idx));
+  if (!sel.length) return toast('未选择任何节点', true);
+  const nodeId = document.getElementById('i-node').value;
+  const prefix = document.getElementById('i-prefix').value.trim();
+  try {
+    const d = await api('POST', '/api/import/confirm', {
+      parse_token: parseToken, target_node_id: +nodeId,
+      selected: sel, name_prefix: prefix || null,
+    });
+    toast(`导入完成：新增 ${d.imported}，跳过重复 ${d.skipped}`);
+    location.href = '/admin/import/records';
+  } catch (e) { toast(e.message || '导入失败', true); }
+}
+</script>
+<style>.dup td { color: #a00; }</style>
+{% endblock %}

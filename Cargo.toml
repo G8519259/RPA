@@ -1,0 +1,49 @@
+[package]
+name = "rust_proxy_admin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4"
+actix-files = "0.6"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "migrate"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+argon2 = "0.5"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tera = "1"
+rand = "0.9"
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "gzip", "socks"] }
+url = "2"
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+anyhow = "1"
+csv = "1"
+sysinfo = "0.32"
+regex = "1"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
+urlencoding = "2"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+tokio-rustls = "0.26"
+rustls = "0.23"
+rustls-native-certs = "0.8"
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+uuid = { version = "1.26.1", features = ["v4"] }
+futures-util = { version = "0.3", features = ["sink"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true

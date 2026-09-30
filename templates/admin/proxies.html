@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}落地代理 - RustProxyAdmin{% endblock %}
+{% block page_title %}落地代理{% endblock %}
+{% block page_desc %}管理落地代理条目（出站代理服务）{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <input id="f-q" placeholder="搜索名称 / 地址 / 备注" style="width:220px">
+  <span id="common-filters"></span>
+  <button class="btn" onclick="__entryPage.page=1;__entryPage.reload()">筛选</button>
+  <button class="btn btn-primary" onclick="__entryPage.openForm()">新建代理</button>
+</div>
+<table class="tbl"><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table>
+<div id="pager"></div>
+<div class="batchbar" id="batchbar" style="display:none"></div>
+<script src="/static/js/entries.js"></script>
+<script>
+(async () => {
+  await loadGT();
+  document.getElementById('common-filters').innerHTML = commonFiltersHtml();
+  document.getElementById('batchbar').innerHTML = batchBarHtml();
+  const L = initEntryPage({
+    runtimeBadge: true,
+    api: '/api/proxy', etype: 'proxy',
+    columns: [
+      { label: '名称', cell: r => `<b>${esc(r.name)}</b>${r.remark ? `<div class="muted">${esc(r.remark)}</div>` : ''}` },
+      { label: '节点', cell: r => esc(r.node_name || r.node_id) },
+      { label: '上游', cell: r => `<span class="badge">${esc(r.upstream_protocol)}</span> <span class="mono">${esc(r.upstream_addr)}</span>` },
+      { label: '监听', cell: r => r.listen_addr ? `<span class="mono">${esc(r.listen_addr)}</span>` : '<span class="muted">-</span>' },
+      { label: '认证', cell: r => r.username ? `<span class="mono">${esc(r.username)}</span>` : '<span class="muted">-</span>' },
+      { label: '分组', cell: r => groupChip(r.group) },
+      { label: '标签', cell: r => tagChips(r.tags) },
+      { label: '配额', cell: quotaCell },
+      { label: '到期', cell: expireCell },
+      { label: '状态', cell: r => badgeFor(r.enabled, r.disabled_reason) },
+      { label: '运行', cell: r => `<span data-rt="proxy:${r.id}">-</span>` },
+    ],
+    formHtml(item, isNew) {
+      const v = k => item ? (item[k] ?? '') : '';
+      return `
+      <div class="form-grid">
+        <div class="form-row"><label>名称 *</label><input id="fm-name" value="${esc(v('name'))}"></div>
+        <div class="form-row"><label>节点 *</label>${nodeSelectHtml('fm-node', item ? item.node_id : 1)}</div>
+        <div class="form-row"><label>上游协议 *</label><select id="fm-proto">${['http','https','socks5','ss','trojan','vless'].map(p => `<option ${v('upstream_protocol') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+        <div class="form-row"><label>上游地址 *（host:port）</label><input id="fm-upstream" value="${esc(v('upstream_addr'))}" placeholder="1.2.3.4:8080"></div>
+        <div class="form-row"><label>本地监听（可选）</label><input id="fm-listen" value="${esc(v('listen_addr'))}" placeholder="127.0.0.1:1080"></div>
+        <div class="form-row"><label>分组</label>${groupSelectHtml('fm-group', item ? item.group_id : null)}</div>
+        <div class="form-row"><label>用户名（可选）</label><input id="fm-user" value="${esc(v('username'))}"></div>
+        <div class="form-row"><label>密码（可选）</label><input id="fm-pass" type="password" value="${esc(v('password'))}" placeholder="${isNew ? '' : '留空不修改'}"></div>
+        <div class="form-row"><label>有效期</label>${expirePresetHtml(isNew ? 'permanent' : null)}</div>
+        <div class="form-row"><label>备注</label><input id="fm-remark" value="${esc(v('remark'))}"></div>
+      </div>
+      <div class="form-row"><label>标签</label><div>${tagCheckHtml(item ? item.tags.map(t => t.id) : [])}</div></div>`;
+    },
+    formData(isNew) {
+      const val = id => document.getElementById(id).value.trim();
+      const d = {
+        name: val('fm-name'), node_id: +document.getElementById('fm-node').value,
+        upstream_protocol: document.getElementById('fm-proto').value,
+        upstream_addr: val('fm-upstream'),
+        listen_addr: val('fm-listen') || null,
+        username: val('fm-user') || null,
+        remark: val('fm-remark') || null,
+        group_id: document.getElementById('fm-group').value ? +document.getElementById('fm-group').value : null,
+        expire_preset: document.getElementById('fm-preset').value,
+        tag_ids: readTagIds(),
+      };
+      const pw = document.getElementById('fm-pass').value;
+      if (isNew) { d.password = pw || null; }
+      else if (pw) d.password = pw;
+      return d;
+    },
+  });
+  L.reload().catch(e => toast(e.message, true));
+})();
+</script>
+{% endblock %}
