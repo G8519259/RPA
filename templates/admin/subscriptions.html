@@ -50,13 +50,20 @@ async function load() {
     </tr>`).join('') || '<tr><td colspan="10" class="muted" style="text-align:center">暂无订阅</td></tr>';
   document.getElementById('pager').innerHTML = pagerHtml(d.total, d.page, d.page_size, 'goto')
     + (IS_VIEWER ? '' : ` <button class="btn btn-sm btn-danger" onclick="batchDel()">批量删除</button>`);
-  d.items.forEach(async s => {
-    try {
-      const det = await api('GET', `/api/subscriptions/${s.id}`);
+  // 主表格已渲染完毕。以下"节点数"为次要信息：改为串行逐个补齐，
+  // 单个失败只显示 '-'，绝不影响主列表的显示（避免并发风暴 + 响应损坏导致整页空白）。
+  (async () => {
+    for (const s of d.items) {
       const el = document.getElementById(`rc-${s.id}`);
-      if (el) el.textContent = det.resolved_count;
-    } catch (e) { /* ignore */ }
-  });
+      if (!el) continue;
+      try {
+        const det = await api('GET', `/api/subscriptions/${s.id}`);
+        el.textContent = det.resolved_count;
+      } catch (e) {
+        el.textContent = '-';
+      }
+    }
+  })();
 }
 function goto(p) { page = p; load().catch(e => toast(e.message, true)); }
 function expireCell(s) {

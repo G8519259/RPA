@@ -4,20 +4,49 @@ function csrf() {
 }
 
 async function api(method, url, body) {
-  const opt = { method, headers: {} };
-  if (body !== undefined) {
-    opt.headers['Content-Type'] = 'application/json';
-    opt.body = JSON.stringify(body);
+  const isIdempotent = method === 'GET' || method === 'HEAD';
+  // 幂等请求（GET/HEAD）在响应体损坏时最多重试 2 次，
+  // 以应对 Cloudflare 等中间层偶发压坏 gzip 响应导致的 JSON 解析失败。
+  const maxTries = isIdempotent ? 3 : 1;
+  let lastErr;
+  for (let attempt = 1; attempt <= maxTries; attempt++) {
+    const opt = { method, headers: {} };
+    if (body !== undefined) {
+      opt.headers['Content-Type'] = 'application/json';
+      opt.body = JSON.stringify(body);
+    }
+    if (!isIdempotent) {
+      opt.headers['X-CSRF-Token'] = csrf();
+    }
+    let r;
+    try {
+      r = await fetch(url, opt);
+    } catch (e) {
+      // 网络层错误：幂等请求可重试
+      lastErr = e;
+      if (attempt < maxTries) { await sleep(120 * attempt); continue; }
+      throw e;
+    }
+    if (r.status === 401) { location.href = '/admin/login'; throw new Error('未登录'); }
+    // 先读文本再解析：文本对损坏响应更宽容，也便于判断是否值得重试
+    const text = await r.text().catch(() => null);
+    let j = null;
+    if (text != null && text.length) {
+      try { j = JSON.parse(text); } catch (_) { j = null; }
+    }
+    if (j == null) {
+      // 响应体缺失或不是合法 JSON（典型：中间层压缩损坏）
+      lastErr = new Error(`响应解析失败（HTTP ${r.status}）`);
+      if (isIdempotent && attempt < maxTries) { await sleep(120 * attempt); continue; }
+      throw lastErr;
+    }
+    if (!j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    return j.data;
   }
-  if (method !== 'GET' && method !== 'HEAD') {
-    opt.headers['X-CSRF-Token'] = csrf();
-  }
-  const r = await fetch(url, opt);
-  if (r.status === 401) { location.href = '/admin/login'; throw new Error('未登录'); }
-  const j = await r.json().catch(() => ({ ok: false, error: 'HTTP ' + r.status }));
-  if (!j.ok) throw new Error(j.error || ('HTTP ' + r.status));
-  return j.data;
+  throw lastErr || new Error('请求失败');
 }
+
+function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
 
 function toast(msg, isErr) {
   const box = document.getElementById('toast');

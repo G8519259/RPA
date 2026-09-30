@@ -24,9 +24,9 @@
     columns: [
       { label: '名称', cell: r => `<b>${esc(r.name)}</b>${r.remark ? `<div class="muted">${esc(r.remark)}</div>` : ''}` },
       { label: '节点', cell: r => esc(r.node_name || r.node_id) },
-      { label: '上游', cell: r => `<span class="badge">${esc(r.upstream_protocol)}</span> <span class="mono">${esc(r.upstream_addr)}</span>` },
+      { label: '上游', cell: r => `<span class="badge">${esc(r.upstream_type)}</span> <span class="mono">${esc(r.upstream_addr)}</span>` },
       { label: '监听', cell: r => r.listen_addr ? `<span class="mono">${esc(r.listen_addr)}</span>` : '<span class="muted">-</span>' },
-      { label: '认证', cell: r => r.username ? `<span class="mono">${esc(r.username)}</span>` : '<span class="muted">-</span>' },
+      { label: '认证', cell: r => r.auth_user ? `<span class="mono">${esc(r.auth_user)}</span>` : '<span class="muted">-</span>' },
       { label: '分组', cell: r => groupChip(r.group) },
       { label: '标签', cell: r => tagChips(r.tags) },
       { label: '配额', cell: quotaCell },
@@ -40,11 +40,11 @@
       <div class="form-grid">
         <div class="form-row"><label>名称 *</label><input id="fm-name" value="${esc(v('name'))}"></div>
         <div class="form-row"><label>节点 *</label>${nodeSelectHtml('fm-node', item ? item.node_id : 1)}</div>
-        <div class="form-row"><label>上游协议 *</label><select id="fm-proto">${['http','https','socks5','ss','trojan','vless'].map(p => `<option ${v('upstream_protocol') === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
-        <div class="form-row"><label>上游地址 *（host:port）</label><input id="fm-upstream" value="${esc(v('upstream_addr'))}" placeholder="1.2.3.4:8080"></div>
+        <div class="form-row"><label>上游协议 *</label><select id="fm-proto" onchange="onProtoChange()">${['direct','http','https','socks5','ss','trojan','vless'].map(p => `<option ${v('upstream_type') === p ? 'selected' : ''}>${p}</option>`).join('')}</select><span class="muted">direct=本机直接出口（本地 socks5/http 落地）</span></div>
+        <div class="form-row"><label>上游地址 <span id="fm-upstream-req">*</span>（host:port）</label><input id="fm-upstream" value="${esc(v('upstream_addr'))}" placeholder="1.2.3.4:8080"><span class="muted" id="fm-upstream-hint" style="display:none">direct 模式无需上游地址，可留空</span></div>
         <div class="form-row"><label>本地监听（可选）</label><input id="fm-listen" value="${esc(v('listen_addr'))}" placeholder="127.0.0.1:1080"></div>
         <div class="form-row"><label>分组</label>${groupSelectHtml('fm-group', item ? item.group_id : null)}</div>
-        <div class="form-row"><label>用户名（可选）</label><input id="fm-user" value="${esc(v('username'))}"></div>
+        <div class="form-row"><label>用户名（可选）</label><input id="fm-user" value="${esc(v('auth_user'))}"></div>
         <div class="form-row"><label>密码（可选）</label><input id="fm-pass" type="password" value="${esc(v('password'))}" placeholder="${isNew ? '' : '留空不修改'}"></div>
         <div class="form-row"><label>有效期</label>${expirePresetHtml(isNew ? 'permanent' : null)}</div>
         <div class="form-row"><label>备注</label><input id="fm-remark" value="${esc(v('remark'))}"></div>
@@ -53,24 +53,41 @@
     },
     formData(isNew) {
       const val = id => document.getElementById(id).value.trim();
+      const proto = document.getElementById('fm-proto').value;
+      // direct 模式无需上游地址，后端不校验；给个占位值以兼容后端非空反序列化。
+      let upstreamAddr = val('fm-upstream');
+      if (proto === 'direct' && !upstreamAddr) upstreamAddr = 'direct';
       const d = {
         name: val('fm-name'), node_id: +document.getElementById('fm-node').value,
-        upstream_protocol: document.getElementById('fm-proto').value,
-        upstream_addr: val('fm-upstream'),
+        // 注意：后端反序列化字段名为 upstream_type（auth_user/auth_pass 亦然）
+        upstream_type: proto,
+        upstream_addr: upstreamAddr,
         listen_addr: val('fm-listen') || null,
-        username: val('fm-user') || null,
+        auth_user: val('fm-user') || null,
         remark: val('fm-remark') || null,
         group_id: document.getElementById('fm-group').value ? +document.getElementById('fm-group').value : null,
         expire_preset: document.getElementById('fm-preset').value,
         tag_ids: readTagIds(),
       };
       const pw = document.getElementById('fm-pass').value;
-      if (isNew) { d.password = pw || null; }
-      else if (pw) d.password = pw;
+      if (isNew) { d.auth_pass = pw || null; }
+      else if (pw) d.auth_pass = pw;
       return d;
     },
   });
   L.reload().catch(e => toast(e.message, true));
 })();
+
+// direct 模式：上游地址无需填写，切换协议时更新提示（在表单打开后由 onchange 触发）
+function onProtoChange() {
+  const proto = document.getElementById('fm-proto').value;
+  const isDirect = proto === 'direct';
+  const req = document.getElementById('fm-upstream-req');
+  const hint = document.getElementById('fm-upstream-hint');
+  const inp = document.getElementById('fm-upstream');
+  if (req) req.style.display = isDirect ? 'none' : '';
+  if (hint) hint.style.display = isDirect ? '' : 'none';
+  if (inp) inp.placeholder = isDirect ? '（direct 无需填写）' : '1.2.3.4:8080';
+}
 </script>
 {% endblock %}
